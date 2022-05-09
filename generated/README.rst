@@ -78,47 +78,80 @@ syntax.
 
 Semantically though, whereas the use of Docker is not mandatory, for a
 reader not familiar with the Dockerfile-language, we quickly list all
-Docker-commands that will be subsequently used:
+Docker-commands that will be subsequently used.
 
-- \ ``ENV``\  exports the given variable in
-  global shell-scope, so that subsequent shell-commands can use the exported
-  variable, e.g. in their internal forked sub-shells.
+Installation commands.
+  \ 
 
-- \ ``ARG``\  can be thought of as being
-  similar to \ ``ENV``\ , except that its scope is
-  more local. Without loss of generality, it can be understood as being
-  restricted to the current paragraph/subsection of discourse.
+  - \ ``ENV``\  exports the given variable
+    in global shell-scope, so that subsequent shell-commands can use the
+    exported variable, e.g. in their internal forked sub-shells.
 
-- \ ``RUN``\  basically executes the given
-  shell-command, with the possibility to use any variables prior
-  exported by \ ``ENV``\  or
-  \ ``ARG``\ .
+  - \ ``ARG``\  can be thought of as being
+    similar to \ ``ENV``\ , except that its scope is
+    more local. Without loss of generality, it can be understood as
+    being restricted to the current paragraph/subsection of discourse.
 
-- \ ``COPY``\  can be thought of as an
-  instantiated version of \ ``RUN``\  to copy files
-  across our fictive filesystem, except that it has the “meta”-ability
-  to refer to specific paragraph/subsections that we are describing in
-  the document, using in particular the
-  \ ``--from=$FROM``\  option.
+  - \ ``RUN``\  basically executes the given
+    shell-command, with the possibility to use any variables prior
+    exported by \ ``ENV``\  or
+    \ ``ARG``\ .
 
-Notes:
+  - \ ``COPY``\  can be thought of as an
+    instantiated version of \ ``RUN``\  to copy files
+    from one location in the filesystem to another one.
 
-- The next presented installation-subsections are topologically
-  ordered, and thus have to be executed in specific order — on the
-  other hand, the sequential presentation made in the document has been
-  tested to work well.
+Installation build stages.
+  To better organize our installation, as well as improve installation
+  reusability, our installation commands can be regrouped together
+  into special “named” subsections, called
+  \ *build stages*\ .
 
-- Whereas the specific topological-dependencies are normally
-  mentioned in the title of each installation-subsection, this
-  information should not be taken as exclusive: e.g. the
-  \ ``--from=$FROM``\  option of
-  \ ``COPY``\  may create new explicit dependencies.
+  - The scope of \ ``ARG``\  is actually
+    restricted to the one of the build stage where it is situated.
+
+  - All presented build stages in the document will be
+    topologically ordered, and thus have to be executed in specific
+    order. It should be not wrong to just follow by default the
+    sequential presentation made in the document, which has been tested
+    to work well. Note that any consecutive
+    \ ``RUN``\  commands are understood to be run in
+    independent sub-shells: e.g. changing the current working directory
+    in a \ ``RUN``\  does not affect another
+    consecutive \ ``RUN``\ .
+
+  - Whereas the specific topological-dependencies are normally
+    mentioned in the title of each build stage subsection, this
+    information should not be taken as exclusive. For example,
+    \ ``COPY``\  actually has the “meta”-ability to
+    refer to any past build stages already executed in the document,
+    using in particular the \ ``--from=$FROM``
+    option. Consequently, a build stage having several
+    \ ``COPY``\  may obviously create new explicit
+    dependencies to other build stages.
+
+Installation context.
+  Certain parts of the SymRustC installation will use its source, which
+  can be obtained from
+  \ `https://github.com/sfu-rsl/symrustc <https://github.com/sfu-rsl/symrustc>`_\ . To refer to
+  the source of SymRustC during its installation, we will have to make
+  them available in our build context: this can be done with
+  \ ``COPY``\ . In particular, without the
+  \ ``--from=$FROM``\  option, the source path given
+  \ ``COPY``\  has to be relative, and is understood
+  to be relative to the SymRustC source located at the above URL.
+
+  Note that \ ``RUN``\  does not have this same
+  “meta”-contextual-ability as \ ``COPY``\ : before
+  manipulating SymRustC files with \ ``RUN``\ ,
+  one would have to prior copy them using
+  \ ``COPY``\ .
 
 Source preparation
 ==================
 
-builder_base: Set up Ubuntu environment (using ubuntu:22.04)
-------------------------------------------------------------
+builder_base: Set up Ubuntu environment (continuing from ubuntu:22.04)
+----------------------------------------------------------------------
 
 Starting from a fresh Ubuntu machine, the installation will be made in
 the \ ``$HOME``\  directory, and does not normally
@@ -140,8 +173,8 @@ that:
   reader. It is just a reminder signalling us that the copy can be
   proceeded in the user-space, without the root permission.
 
-builder_source: Set up project source (using builder_base)
-----------------------------------------------------------
+builder_source: Set up project source (continuing from builder_base)
+--------------------------------------------------------------------
 
 Certain OS may already come with some LLVM version(s) already
 installed.  On the other hand, because the one we are working with is
@@ -273,8 +306,8 @@ done in its original repository:
 
 - \ `https://github.com/eurecom-s3/symcc/blob/master/Dockerfile <https://github.com/eurecom-s3/symcc/blob/master/Dockerfile>`_
 
-builder_depend: Set up project dependencies (using builder_source)
-------------------------------------------------------------------
+builder_depend: Set up project dependencies (continuing from builder_source)
+----------------------------------------------------------------------------
 
 As prerequisite, the \ ``lit``\  binary has to be installed.
 
@@ -290,8 +323,8 @@ As prerequisite, the \ ``lit``\  binary has to be installed.
   RUN pip3 install lit
   ENV PATH=$HOME/.local/bin:$PATH
 
-builder_afl: Build AFL (using builder_source)
----------------------------------------------
+builder_afl: Build AFL (continuing from builder_source)
+-------------------------------------------------------
 
 Since AFL is not used by the installation phase of SymRustC, this part
 can be skipped.
@@ -301,8 +334,8 @@ can be skipped.
   RUN cd afl \
       && make
 
-builder_symcc_simple: Build SymCC simple backend (using builder_depend)
------------------------------------------------------------------------
+builder_symcc_simple: Build SymCC simple backend (continuing from builder_depend)
+---------------------------------------------------------------------------------
 
 Note that we explicitly set the LLVM version to use.
 
@@ -317,8 +350,8 @@ Note that we explicitly set the LLVM version to use.
           -DZ3_TRUST_SYSTEM_VERSION=on \
       && ninja check
 
-builder_symcc_libcxx: Build LLVM libcxx using SymCC simple backend (using builder_symcc_simple)
------------------------------------------------------------------------------------------------
+builder_symcc_libcxx: Build LLVM libcxx using SymCC simple backend (continuing from builder_symcc_simple)
+---------------------------------------------------------------------------------------------------------
 
 We build the necessary SymCC/LLVM component inside the same folder
 location where the build of SymRustC/LLVM will be expected to happen.
@@ -348,8 +381,8 @@ building the LLVM part of SymRustC.
     && ninja distribution \
     && ninja install-distribution
 
-builder_symcc_qsym: Build SymCC Qsym backend (using builder_symcc_libcxx)
--------------------------------------------------------------------------
+builder_symcc_qsym: Build SymCC Qsym backend (continuing from builder_symcc_libcxx)
+-----------------------------------------------------------------------------------
 
 Note that we explicitly set the LLVM version to use.
 
@@ -367,8 +400,8 @@ Note that we explicitly set the LLVM version to use.
 Building SymRustC
 =================
 
-builder_symllvm: Build SymLLVM (using builder_source)
------------------------------------------------------
+builder_symllvm: Build SymLLVM (continuing from builder_source)
+---------------------------------------------------------------
 
 Before building SymRustC, we can build its LLVM component, called here
 SymLLVM. It is actually not mandatory to separate the build of SymLLVM
@@ -386,8 +419,8 @@ while drawing up benchmark statistics.
     && cd rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
     && $SYMRUSTC_HOME/src/llvm/cmake.sh
 
-builder_symrustc: Build SymRustC (using builder_source)
--------------------------------------------------------
+builder_symrustc: Build SymRustC (continuing from builder_source)
+-----------------------------------------------------------------
 
 This part focuses on the main build of SymRustC.
 
@@ -414,19 +447,20 @@ Disabling SSE2.
   patch can be thought of as only impacting the bootstrap time of RustC.
 
   Disabling SSE2 is more than desirable here for us to be able to later
-  do concolic execution on Rust programs of size greater than 16
-  bytes. (Otherwise, a run-time error would be raised when trying to
-  apply an SSE2-built SymRustC compiler on programs of length larger
-  than 16 bytes.)
+  do concolic execution on RustC, precisely when it is compiling Rust
+  programs of size greater than 16 bytes. (Otherwise, a run-time error
+  would be raised when trying to apply an SSE2-built SymRustC compiler
+  on programs of length larger than 16 bytes.)
 
 Forcing stage 2.
-  At the time of writing, the bootstrap of SymRustC is not made based
-  using some ancestor version of SymRustC: instead, it is using a
-  “traditional” ancestor version of RustC (as when bootstrapping RustC
-  itself). In this case, since the compiler used at stage 0 does not
-  have the ability to generate a concolic binary, we explicitly let the
-  bootstrap last until at least stage 2. Note that the “stage 2
-  forcing” has to be made explicit starting from RustC 1.47.0:
+  At the time of writing, the bootstrap of SymRustC is not made based on
+  some ancestor version of SymRustC: instead, it is using a
+  “traditional” ancestor version of RustC (the same RustC version used
+  to bootstrap RustC itself). In this case, since the compiler used at
+  stage 0 does not have the ability to generate a concolic binary, we
+  explicitly let the bootstrap last until at least stage 2. Note that
+  the “stage 2 forcing” has to be made explicit starting from RustC
+  1.47.0:
 
   - \ `https://github.com/rust-lang/rust/blob/master/RELEASES.md <https://github.com/rust-lang/rust/blob/master/RELEASES.md>`_
 
@@ -464,7 +498,6 @@ Composing with SymCC/Runtime.
   ENV PATH=$HOME/.cargo/bin:$PATH
   
   COPY --chown=ubuntu:ubuntu --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH
-  COPY --chown=ubuntu:ubuntu src/rs/cargo.sh $SYMRUSTC_HOME_RS/
   COPY --chown=ubuntu:ubuntu src/rs/wait_all.sh $SYMRUSTC_HOME_RS/
 
 Certain Rust programs \ `P`\  embedding external language code (such as C
@@ -482,20 +515,38 @@ For the case of \ ``clang``\  or
 
 .. code:: Dockerfile
   
-  RUN mkdir symcc_build_clang \
-      && ln -s ~/symcc_build/symcc symcc_build_clang/clang \
-      && ln -s ~/symcc_build/sym++ symcc_build_clang/clang++
+  RUN mkdir clang_symcc_on \
+      && ln -s ~/symcc_build/symcc clang_symcc_on/clang \
+      && ln -s ~/symcc_build/sym++ clang_symcc_on/clang++
 
-Finally, it suffices to modify \ ``$PATH``\  before
-calling SymRustC for future
-\ ``clang``\ -invocations to be overloaded by
-\ ``symcc``\ .
+Similarly, we provide the same disabling counterpart for a Rust
+project interested to explicitly disable the concolic run on its C or
+C++ implementation:
 
-Note that certain Rust libraries may syntactically check the name of
-the compiler used, e.g. before applying specific optimizations
-depending on the type of compiler used, so using the syntactic word
-\ ``symcc``\  instead of
-\ ``clang``\  may unexpectedly violate the
+.. code:: Dockerfile
+  
+  RUN mkdir clang_symcc_off \
+      && ln -s $(which clang-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang \
+      && ln -s $(which clang++-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang++
+
+Finally, it suffices to modify \ ``$PATH``\  in
+such a way that SymRustC will call \ ``clang``
+with (either) the necessary overloading brought by
+\ ``symcc``\  (or not).
+
+In a nutshell, this is what has been implemented in this script, to be
+used in our testing framework:
+
+.. code:: Dockerfile
+  
+  COPY --chown=ubuntu:ubuntu src/rs/cargo.sh $SYMRUSTC_HOME_RS/
+
+Note that certain Rust libraries may
+\ *syntactically*\  check the name of the compiler
+used, e.g. before applying specific optimizations depending on the
+type of compiler used, so using the syntactic word
+\ ``clang``\  instead of
+\ ``symcc``\  is one way to avoid violating those
 syntactic check!
 
 Executing tests
@@ -510,8 +561,8 @@ Optionally building an initial entry-point
 This part resembles to the one present in the original SymCC
 repository.
 
-builder_addons: Build additional tools (using builder_symrustc)
----------------------------------------------------------------
+builder_addons: Build additional tools (continuing from builder_symrustc)
+-------------------------------------------------------------------------
 
 .. code:: Dockerfile
   
@@ -521,8 +572,8 @@ builder_addons: Build additional tools (using builder_symrustc)
       && export SYMRUSTC_EXAMPLE=~/symcc_source/util/symcc_fuzzing_helper \
       && $SYMRUSTC_HOME_RS/cargo.sh install --path $SYMRUSTC_EXAMPLE
 
-builder_main: Build main image (using builder_symrustc)
--------------------------------------------------------
+builder_main: Build main image (continuing from builder_symrustc)
+-----------------------------------------------------------------
 
 .. code:: Dockerfile
   
@@ -549,8 +600,8 @@ Testing SymCC on C++ programs
 This part ensures that our internal versions of SymCC are behaving as
 expected on C++ programs.
 
-builder_examples_cpp_z3_libcxx_reg: Build concolic C++ examples - SymCC/Z3, libcxx regular (using builder_symcc_simple)
------------------------------------------------------------------------------------------------------------------------
+builder_examples_cpp_z3_libcxx_reg: Build concolic C++ examples - SymCC/Z3, libcxx regular (continuing from builder_symcc_simple)
+---------------------------------------------------------------------------------------------------------------------------------
 
 .. code:: Dockerfile
   
@@ -561,8 +612,8 @@ builder_examples_cpp_z3_libcxx_reg: Build concolic C++ examples - SymCC/Z3, libc
       && export SYMCC_REGULAR_LIBCXX=yes \
       && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
 
-builder_examples_cpp_z3_libcxx_inst: Build concolic C++ examples - SymCC/Z3, libcxx instrumented (using builder_symcc_libcxx)
------------------------------------------------------------------------------------------------------------------------------
+builder_examples_cpp_z3_libcxx_inst: Build concolic C++ examples - SymCC/Z3, libcxx instrumented (continuing from builder_symcc_libcxx)
+---------------------------------------------------------------------------------------------------------------------------------------
 
 .. code:: Dockerfile
   
@@ -572,8 +623,8 @@ builder_examples_cpp_z3_libcxx_inst: Build concolic C++ examples - SymCC/Z3, lib
   RUN cd belcarra_source/examples \
       && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
 
-builder_examples_cpp_qsym: Build concolic C++ examples - SymCC/QSYM (using builder_symcc_qsym)
-----------------------------------------------------------------------------------------------
+builder_examples_cpp_qsym: Build concolic C++ examples - SymCC/QSYM (continuing from builder_symcc_qsym)
+--------------------------------------------------------------------------------------------------------
 
 .. code:: Dockerfile
   
@@ -585,8 +636,8 @@ builder_examples_cpp_qsym: Build concolic C++ examples - SymCC/QSYM (using build
   RUN cd belcarra_source/examples \
       && $SYMRUSTC_HOME_CPP/main_fold_sym++_qsym.sh
 
-builder_examples_cpp_clang: Build concolic C++ examples - Only clang (using builder_source)
--------------------------------------------------------------------------------------------
+builder_examples_cpp_clang: Build concolic C++ examples - Only clang (continuing from builder_source)
+-----------------------------------------------------------------------------------------------------
 
 .. code:: Dockerfile
   
@@ -602,8 +653,8 @@ Testing SymRustC on Rust programs
 We can now focus on the concolic execution of Rust programs with
 SymRustC.
 
-builder_examples_rs: Build concolic Rust examples (using builder_symrustc)
---------------------------------------------------------------------------
+builder_examples_rs: Build concolic Rust examples (continuing from builder_symrustc)
+------------------------------------------------------------------------------------
 
 .. code:: Dockerfile
   
@@ -614,10 +665,6 @@ builder_examples_rs: Build concolic Rust examples (using builder_symrustc)
   
   COPY --chown=ubuntu:ubuntu src/rs belcarra_source/src/rs
   COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
-  
-  RUN mkdir clang_build \
-      && ln -s $(which clang-$SYMRUSTC_LLVM_VERSION) clang_build/clang \
-      && ln -s $(which clang++-$SYMRUSTC_LLVM_VERSION) clang_build/clang++
 
 Our Rust tests presented in this subsection have been all optimized to
 take advantage of multi-core processors — at a certain expense
@@ -647,10 +694,10 @@ At this point, we are ready to start the concolic execution using
 SymRustC.
 
 Due to the fact that our version of SymRustC has been bootstrapped
-with SymRustC, we can start the tests by performing the concolic
-execution on the own source of RustC (while
-\ ``rustc``\  is instructed to compile our test
-examples):
+with SymRustC (at least internally, e.g. from stage 1 to stage 2), we
+can start the tests by performing the concolic execution on the own
+source of RustC (while \ ``rustc``\  is instructed
+to compile our test examples):
 
 .. code:: Dockerfile
   
