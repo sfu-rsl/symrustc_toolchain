@@ -107,28 +107,29 @@ Installation build stages.
   into special “named” subsections, called
   \ *build stages*\ .
 
-  - The scope of \ ``ARG``\  is actually
-    restricted to the one of the build stage where it is situated.
+  - (\ ``ARG``\ ) The scope of
+    \ ``ARG``\  is actually restricted to the one of
+    the build stage where it is situated.
 
-  - All presented build stages in the document will be
-    topologically ordered, and thus have to be executed in specific
-    order. It should be not wrong to just follow by default the
-    sequential presentation made in the document, which has been tested
-    to work well. Note that any consecutive
+  - (\ ``RUN``\ ) All presented build stages
+    in the document will be topologically ordered, and thus have to be
+    executed in specific order. It should be not wrong to just follow by
+    default the sequential presentation made in the document, which has
+    been tested to work well. Note that any consecutive
     \ ``RUN``\  commands are understood to be run in
     independent sub-shells: e.g. changing the current working directory
     in a \ ``RUN``\  does not affect another
     consecutive \ ``RUN``\ .
 
-  - Whereas the specific topological-dependencies are normally
-    mentioned in the title of each build stage subsection, this
-    information should not be taken as exclusive. For example,
-    \ ``COPY``\  actually has the “meta”-ability to
-    refer to any past build stages already executed in the document,
-    using in particular the \ ``--from=$FROM``
-    option. Consequently, a build stage having several
-    \ ``COPY``\  may obviously create new explicit
-    dependencies to other build stages.
+  - (\ ``COPY``\ ) Whereas the specific
+    topological-dependencies are normally mentioned in the title of each
+    build stage subsection, this information should not be taken as
+    exclusive. For example, \ ``COPY``\  actually has
+    the “meta”-ability to refer to any past build stages already
+    executed in the document, using in particular the
+    \ ``--from=$FROM``\  option. Consequently, a
+    build stage having several \ ``COPY``\  may
+    obviously create new explicit dependencies to other build stages.
 
 Installation context.
   Certain parts of the SymRustC installation will use its source, which
@@ -445,6 +446,8 @@ Disabling SSE2.
   conservative: at run-time, the behavior of the overall RustC compiler
   should be identical whenever the patch is applied or not — i.e. the
   patch can be thought of as only impacting the bootstrap time of RustC.
+  (See also:
+  \ `https://github.com/eurecom-s3/symcc/issues/10 <https://github.com/eurecom-s3/symcc/issues/10>`_\ .)
 
   Disabling SSE2 is more than desirable here for us to be able to later
   do concolic execution on RustC, precisely when it is compiling Rust
@@ -549,173 +552,7 @@ type of compiler used, so using the syntactic word
 \ ``symcc``\  is one way to avoid violating those
 syntactic check!
 
-Executing tests
-***************
-
-Once the build of SymRustC is finished, we can further proceed to
-miscellaneous tests and example execution.
-
-Optionally building an initial entry-point
-==========================================
-
-This part resembles to the one present in the original SymCC
-repository.
-
-builder_addons: Build additional tools (continuing from builder_symrustc)
--------------------------------------------------------------------------
-
-.. code:: Dockerfile
-  
-  ARG SYMRUSTC_CI
-  
-  RUN source $SYMRUSTC_HOME_RS/wait_all.sh \
-      && export SYMRUSTC_EXAMPLE=~/symcc_source/util/symcc_fuzzing_helper \
-      && $SYMRUSTC_HOME_RS/cargo.sh install --path $SYMRUSTC_EXAMPLE
-
-builder_main: Build main image (continuing from builder_symrustc)
------------------------------------------------------------------
-
-.. code:: Dockerfile
-  
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          build-essential \
-          libllvm$SYMRUSTC_LLVM_VERSION \
-          zlib1g \
-      && sudo apt-get clean
-  
-  RUN ln -s ~/symcc_source/util/pure_concolic_execution.sh symcc_build
-  COPY --chown=ubuntu:ubuntu --from=builder_afl $HOME/afl afl
-  COPY --chown=ubuntu:ubuntu --from=builder_addons $HOME/.cargo .cargo
-  
-  ENV PATH=$HOME/symcc_build:$PATH
-  
-  ENV AFL_PATH=$HOME/afl
-  ENV AFL_CC=clang-$SYMRUSTC_LLVM_VERSION
-  ENV AFL_CXX=clang++-$SYMRUSTC_LLVM_VERSION
-
-Testing SymCC on C++ programs
-=============================
-
-This part ensures that our internal versions of SymCC are behaving as
-expected on C++ programs.
-
-builder_examples_cpp_z3_libcxx_reg: Build concolic C++ examples - SymCC/Z3, libcxx regular (continuing from builder_symcc_simple)
----------------------------------------------------------------------------------------------------------------------------------
-
-.. code:: Dockerfile
-  
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
-  
-  RUN cd belcarra_source/examples \
-      && export SYMCC_REGULAR_LIBCXX=yes \
-      && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
-
-builder_examples_cpp_z3_libcxx_inst: Build concolic C++ examples - SymCC/Z3, libcxx instrumented (continuing from builder_symcc_libcxx)
----------------------------------------------------------------------------------------------------------------------------------------
-
-.. code:: Dockerfile
-  
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
-  
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
-
-builder_examples_cpp_qsym: Build concolic C++ examples - SymCC/QSYM (continuing from builder_symcc_qsym)
---------------------------------------------------------------------------------------------------------
-
-.. code:: Dockerfile
-  
-  RUN mkdir /tmp/output
-  
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
-  
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_CPP/main_fold_sym++_qsym.sh
-
-builder_examples_cpp_clang: Build concolic C++ examples - Only clang (continuing from builder_source)
------------------------------------------------------------------------------------------------------
-
-.. code:: Dockerfile
-  
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
-  
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_CPP/main_fold_clang++.sh
-
-Testing SymRustC on Rust programs
-=================================
-
-We can now focus on the concolic execution of Rust programs with
-SymRustC.
-
-builder_examples_rs: Build concolic Rust examples (continuing from builder_symrustc)
-------------------------------------------------------------------------------------
-
-.. code:: Dockerfile
-  
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          bsdmainutils \
-      && sudo apt-get clean
-  
-  COPY --chown=ubuntu:ubuntu src/rs belcarra_source/src/rs
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
-
-Our Rust tests presented in this subsection have been all optimized to
-take advantage of multi-core processors — at a certain expense
-trade-off cost on the memory.
-
-However, certain continuous-integration platform may differently
-arrange the resource consumption made available to general users, by
-prioritizing time resource over space resource. If this is the case,
-then one can set the next variable to an arbitrary value before
-proceeding further. Setting the variable will instruct our test to
-limit as most as possible any fork operations:
-
-.. code:: Dockerfile
-  
-  ARG SYMRUSTC_CI
-
-Certain concolic execution run done by SymRustC may fail: e.g.,
-whenever an instruction is not yet supported by SymCC. To avoid making
-the fail interrupting our tests, we can set the next variable to an
-arbitrary value:
-
-.. code:: Dockerfile
-  
-  ARG SYMRUSTC_SKIP_FAIL
-
-At this point, we are ready to start the concolic execution using
-SymRustC.
-
-Due to the fact that our version of SymRustC has been bootstrapped
-with SymRustC (at least internally, e.g. from stage 1 to stage 2), we
-can start the tests by performing the concolic execution on the own
-source of RustC (while \ ``rustc``\  is instructed
-to compile our test examples):
-
-.. code:: Dockerfile
-  
-  ARG SYMRUSTC_EXAMPLE0=$HOME/belcarra_source/examples
-  
-  RUN cd $SYMRUSTC_EXAMPLE0 \
-      && $SYMRUSTC_HOME_RS/fold_own_compiler.sh
-
-Ultimately, we can proceed to the concolic execution of each
-binary-compiled-result produced by each respective SymRustC invocation
-(obtained above from \ ``rustc``\ ):
-
-.. code:: Dockerfile
-  
-  RUN cd $SYMRUSTC_EXAMPLE0 \
-      && $SYMRUSTC_HOME_RS/fold_comp_result.sh
-
-Installation Summary
+Installation summary
 ********************
 
 In summary, the following start script has been provided for building
@@ -725,6 +562,76 @@ everything presented in the document:
 
 Note that, at the time of writing, this script is internally assuming
 that \ ``docker``\  is installed.
+
+Usage
+*****
+
+The installation provides at least two binaries:
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  to
+compile a Rust example, and
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  to run a
+compiled example. Their arguments are all optional, and can be
+provided by prior exporting the following shell variables (e.g. using
+\ ``export``\ ) before executing the intended
+binaries:
+
+- 
+  \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ :
+
+  - Exporting the variable
+    \ ``$SYMRUSTC_DIR``\  can be used to set a
+    specific compilation directory other than the current working
+    directory (namely \ ``$PWD``\ ).
+
+  - Exporting the variable
+    \ ``$SYMRUSTC_BUILD_COMP_CONCOLIC``\  with
+    \ ``true``\  makes the concolic execution of the
+    Rust compiler be performed while the compiler is compiling the
+    example. By default, this option is set to
+    \ ``false``\ .
+
+  - Any explicit arguments provided to
+    \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  will
+    be forwarded to our internal version of
+    \ ``cargo rustc``\  (e.g.
+    \ ``-- -Clinker=clang++``\  to set a specific
+    linker).
+
+- \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ :
+
+  - Exporting the variable
+    \ ``$SYMRUSTC_DIR``\  can be used to set a
+    specific execution directory other than the current working
+    directory (namely \ ``$PWD``\ ).
+
+  - Exporting the variable
+    \ ``$SYMRUSTC_RUN_EXPECTED_CODE``\  with a
+    non-null exit code will make our test framework expecting the exit
+    code of our running example to be that code instead of the classic
+    zero.
+
+  - Exporting the variable
+    \ ``$SYMRUSTC_RUN_EXPECTED_COUNT``\  with an
+    integer will make our test framework expecting the number of answers
+    provided by our running concolic example to be that integer. When no
+    integer is provided, that expectation-check part will be skipped.
+
+  - Any explicit arguments provided to
+    \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  will be
+    forwarded to \ ``echo``\ , which is internally
+    used to produce some output that will be provided as input to our
+    compiled-binary example (e.g. usual options (of
+    \ ``echo``\ ) such as
+    \ ``-n``\  can be used to better control the
+    appearance of the trailing newline sent to our binary example).
+
+Extended usage (with tests)
+***************************
+
+Extended usage cases can be found in an accompanying appendix
+document:
+
+- \ `https://github.com/sfu-rsl/symrustc/blob/main/generated/README_extended.rst <https://github.com/sfu-rsl/symrustc/blob/main/generated/README_extended.rst>`_
 
 License
 *******
