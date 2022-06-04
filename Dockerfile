@@ -22,7 +22,7 @@
 #
 # Set up Ubuntu environment
 #
-FROM ubuntu:20.04 AS builder_base
+FROM ubuntu:22.04 AS builder_base
 
 SHELL ["/bin/bash", "-c"]
 
@@ -44,7 +44,8 @@ WORKDIR $HOME
 #
 FROM builder_base AS builder_source
 
-ENV SYMRUSTC_LLVM_VERSION=10
+ENV SYMRUSTC_LLVM_VERSION=11
+ENV SYMRUSTC_LLVM_VERSION_LONG=11.1
 
 RUN sudo apt-get update \
     && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -64,7 +65,7 @@ ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
 
 # Download the Rust compiler with SymCC
 ARG SYMRUSTC_RUST_VERSION
-ENV SYMRUSTC_RUST_VERSION=${SYMRUSTC_RUST_VERSION:-symcc_comp_utils/1.46.0}
+ENV SYMRUSTC_RUST_VERSION=${SYMRUSTC_RUST_VERSION:-symcc_comp_utils/1.47.0}
 RUN git clone -b $SYMRUSTC_RUST_VERSION --depth 1 https://github.com/sfu-rsl/rust.git rust_source
 
 # Init submodules
@@ -122,7 +123,7 @@ FROM builder_depend AS builder_symcc_simple
 RUN mkdir symcc_build_simple \
     && cd symcc_build_simple \
     && cmake -G Ninja ~/symcc_source_main \
-        -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION \
+        -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION_LONG \
         -DQSYM_BACKEND=OFF \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DZ3_TRUST_SYSTEM_VERSION=on \
@@ -155,7 +156,7 @@ FROM builder_symcc_libcxx AS builder_symcc_qsym
 RUN mkdir symcc_build \
     && cd symcc_build \
     && cmake -G Ninja ~/symcc_source_main \
-        -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION \
+        -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION_LONG \
         -DQSYM_BACKEND=ON \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DZ3_TRUST_SYSTEM_VERSION=on \
@@ -200,7 +201,7 @@ RUN export SYMCC_NO_SYMBOLIC_INPUT=yes \
     && sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
         src/librustc_span/analyze_source_file.rs \
     && export SYMCC_RUNTIME_DIR=~/symcc_build/SymRuntime-prefix/src/SymRuntime-build \
-    && /usr/bin/python3 ./x.py build
+    && /usr/bin/python3 ./x.py build --stage 2
 
 #
 
