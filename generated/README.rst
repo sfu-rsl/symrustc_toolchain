@@ -253,22 +253,38 @@ the rest of the document:
   
   ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
 
-The installation of SymRustC is currently performed through an
-external git cloning, one other alternative would be a direct git
-submodule integration of the cloned repository. It is notably at this
-point where we explicitly specify the SymRustC version to use:
+The first SymRustC component to install is our custom Rust
+compiler. (Note that at the time of writing, our modifications mainly
+intervened in the compiler bootstrap part, no significant changes
+happened in the core compiling process.) Since this component has its
+own git repository, the installation of this component can either be
+performed through an explicit git cloning, or through the use of some
+git submodule integration, made in SymRustC to keep track of the
+precise Rust version. However, while copying the whole SymRustC local
+source with the \ ``COPY``\  command may also be
+feasible here, one can as well use a fresh clone of SymRustC instead
+(e.g. for testing purposes, or miscellaneous reasons related to the
+potential presence of locally modified files differing from the git
+server state).
+
+It is notably at this point where we explicitly specify the SymRustC
+version to use, and it has to be mandatorily provided:
 
 .. code:: Dockerfile
   
-  # Download the Rust compiler with SymCC
+  # Setup Rust compiler source
   ARG SYMRUSTC_RUST_VERSION
-  ENV SYMRUSTC_RUST_VERSION=${SYMRUSTC_RUST_VERSION:-symcc_comp_utils/1.47.0}
-  RUN git clone -b $SYMRUSTC_RUST_VERSION --depth 1 https://github.com/sfu-rsl/rust.git rust_source
+  ARG SYMRUSTC_BRANCH
+  RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
+        git clone -b $SYMRUSTC_RUST_VERSION --depth 1 https://github.com/sfu-rsl/rust.git rust_source; \
+      else \
+        git clone -b "$SYMRUSTC_BRANCH" --depth 1 https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
+        ln -s ~/belcarra_source0/src/rs/rust_source; \
+      fi
   
   # Init submodules
-  RUN if git -C rust_source submodule status | grep "^-">/dev/null ; then \
-        git -C rust_source submodule update --init --recursive; \
-      fi
+  RUN [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0' ; \
+      git -C "$dir" submodule update --init --recursive
   
   #
   RUN ln -s ~/rust_source/src/llvm-project llvm_source
@@ -417,11 +433,11 @@ while drawing up benchmark statistics.
   COPY --chown=ubuntu:ubuntu src/llvm/cmake.sh $SYMRUSTC_HOME/src/llvm/
   
   RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
-    && cd rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
+    && cd -P rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
     && $SYMRUSTC_HOME/src/llvm/cmake.sh
 
-builder_symrustc: Build SymRustC (continuing from builder_source)
------------------------------------------------------------------
+builder_symrustc: Build SymRustC core (continuing from builder_source)
+----------------------------------------------------------------------
 
 This part focuses on the main build of SymRustC.
 
@@ -501,7 +517,6 @@ Composing with SymCC/Runtime.
   ENV PATH=$HOME/.cargo/bin:$PATH
   
   COPY --chown=ubuntu:ubuntu --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH
-  COPY --chown=ubuntu:ubuntu src/rs/wait_all.sh $SYMRUSTC_HOME_RS/
 
 Certain Rust programs \ `P`\  embedding external language code (such as C
 or C++) may rely on external respective compiling tools (such as
@@ -535,14 +550,8 @@ C++ implementation:
 Finally, it suffices to modify \ ``$PATH``\  in
 such a way that SymRustC will call \ ``clang``
 with (either) the necessary overloading brought by
-\ ``symcc``\  (or not).
-
-In a nutshell, this is what has been implemented in this script, to be
-used in our testing framework:
-
-.. code:: Dockerfile
-  
-  COPY --chown=ubuntu:ubuntu src/rs/cargo.sh $SYMRUSTC_HOME_RS/
+\ ``symcc``\  (or not) — the next usage section
+provides more examples and applications.
 
 Note that certain Rust libraries may
 \ *syntactically*\  check the name of the compiler
@@ -566,7 +575,23 @@ that \ ``docker``\  is installed.
 Usage
 *****
 
-The installation provides at least two binaries:
+Applying SymRustC on a single example
+=====================================
+
+builder_symrustc_main: Build SymRustC main (continuing from builder_symrustc)
+-----------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  RUN sudo apt-get update \
+      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          bsdmainutils \
+      && sudo apt-get clean
+  
+  COPY --chown=ubuntu:ubuntu src/rs belcarra_source/src/rs
+  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
+
+Our SymRustC installation provides at least two binaries:
 \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  to
 compile a Rust example, and
 \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  to run a
@@ -624,6 +649,72 @@ binaries:
     \ ``echo``\ ) such as
     \ ``-n``\  can be used to better control the
     appearance of the trailing newline sent to our binary example).
+
+Applying SymRustC on multiple examples
+======================================
+
+builder_examples_rs: Build concolic Rust examples (continuing from builder_symrustc_main)
+-----------------------------------------------------------------------------------------
+
+Once that the experimenting with scripts acting on a single example is
+clear:
+
+- \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``
+- \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``
+
+the general case where we have a bunch of examples is
+straightforward. This leads to:
+
+- \ ``$SYMRUSTC_HOME_RS/fold_symrustc_build.sh``
+
+- \ ``$SYMRUSTC_HOME_RS/fold_symrustc_run.sh``
+
+Our Rust tests presented in this subsection have been all optimized to
+take advantage of multi-core processors — at a certain expense
+trade-off cost on the memory.
+
+However, certain continuous-integration platform may differently
+arrange the resource consumption made available to general users, by
+prioritizing time resource over space resource. If this is the case,
+then one can set the next variable to an arbitrary value before
+proceeding further. Setting the variable will instruct our test to
+limit as most as possible any fork operations:
+
+.. code:: Dockerfile
+  
+  ARG SYMRUSTC_CI
+
+Certain concolic execution run done by SymRustC may fail: e.g.,
+whenever an instruction is not yet supported by SymCC. To avoid making
+the fail interrupting our tests, we can set the next variable to an
+arbitrary value:
+
+.. code:: Dockerfile
+  
+  ARG SYMRUSTC_SKIP_FAIL
+
+At this point, we are ready to start the concolic execution using
+SymRustC.
+
+Due to the fact that our version of SymRustC has been bootstrapped
+with SymRustC (at least internally, e.g. from stage 1 to stage 2), we
+can start the tests by performing the concolic execution on the own
+source of RustC (while \ ``rustc``\  is instructed
+to compile our test examples):
+
+.. code:: Dockerfile
+  
+  ARG SYMRUSTC_EXAMPLE0=$HOME/belcarra_source/examples
+  
+  RUN $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
+
+Ultimately, we can proceed to the concolic execution of each
+binary-compiled-result produced by each respective SymRustC invocation
+(obtained above from \ ``rustc``\ ):
+
+.. code:: Dockerfile
+  
+  RUN $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
 
 Extended usage (with tests)
 ***************************

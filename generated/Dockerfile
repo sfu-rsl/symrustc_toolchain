@@ -64,15 +64,19 @@ ENV SYMRUSTC_HOME_RS=$SYMRUSTC_HOME/src/rs
 
 ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
 
-# Download the Rust compiler with SymCC
+# Setup Rust compiler source
 ARG SYMRUSTC_RUST_VERSION
-ENV SYMRUSTC_RUST_VERSION=${SYMRUSTC_RUST_VERSION:-symcc_comp_utils/1.47.0}
-RUN git clone -b $SYMRUSTC_RUST_VERSION --depth 1 https://github.com/sfu-rsl/rust.git rust_source
+ARG SYMRUSTC_BRANCH
+RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
+      git clone -b $SYMRUSTC_RUST_VERSION --depth 1 https://github.com/sfu-rsl/rust.git rust_source; \
+    else \
+      git clone -b "$SYMRUSTC_BRANCH" --depth 1 https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
+      ln -s ~/belcarra_source0/src/rs/rust_source; \
+    fi
 
 # Init submodules
-RUN if git -C rust_source submodule status | grep "^-">/dev/null ; then \
-      git -C rust_source submodule update --init --recursive; \
-    fi
+RUN [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0' ; \
+    git -C "$dir" submodule update --init --recursive
 
 #
 RUN ln -s ~/rust_source/src/llvm-project llvm_source
@@ -169,11 +173,11 @@ FROM builder_source AS builder_symllvm
 COPY --chown=ubuntu:ubuntu src/llvm/cmake.sh $SYMRUSTC_HOME/src/llvm/
 
 RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
-  && cd rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
+  && cd -P rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
   && $SYMRUSTC_HOME/src/llvm/cmake.sh
 
 #
-# Build SymRustC
+# Build SymRustC core
 #
 FROM builder_source AS builder_symrustc
 
@@ -206,7 +210,6 @@ ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD/stage2/lib
 ENV PATH=$HOME/.cargo/bin:$PATH
 
 COPY --chown=ubuntu:ubuntu --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH
-COPY --chown=ubuntu:ubuntu src/rs/wait_all.sh $SYMRUSTC_HOME_RS/
 
 RUN mkdir clang_symcc_on \
     && ln -s ~/symcc_build/symcc clang_symcc_on/clang \
@@ -216,7 +219,33 @@ RUN mkdir clang_symcc_off \
     && ln -s $(which clang-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang \
     && ln -s $(which clang++-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang++
 
-COPY --chown=ubuntu:ubuntu src/rs/cargo.sh $SYMRUSTC_HOME_RS/
+#
+# Build SymRustC main
+#
+FROM builder_symrustc AS builder_symrustc_main
+
+RUN sudo apt-get update \
+    && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        bsdmainutils \
+    && sudo apt-get clean
+
+COPY --chown=ubuntu:ubuntu src/rs belcarra_source/src/rs
+COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
+
+#
+# Build concolic Rust examples
+#
+FROM builder_symrustc_main AS builder_examples_rs
+
+ARG SYMRUSTC_CI
+
+ARG SYMRUSTC_SKIP_FAIL
+
+ARG SYMRUSTC_EXAMPLE0=$HOME/belcarra_source/examples
+
+RUN $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
+
+RUN $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
 
 #
 # Build additional tools
@@ -225,14 +254,17 @@ FROM builder_symrustc AS builder_addons
 
 ARG SYMRUSTC_CI
 
+COPY --chown=ubuntu:ubuntu src/rs/wait_all.sh $SYMRUSTC_HOME_RS/
+COPY --chown=ubuntu:ubuntu src/rs/cargo.sh $SYMRUSTC_HOME_RS/
+
 RUN source $SYMRUSTC_HOME_RS/wait_all.sh \
     && export SYMRUSTC_EXAMPLE=~/symcc_source/util/symcc_fuzzing_helper \
     && $SYMRUSTC_HOME_RS/cargo.sh install --path $SYMRUSTC_EXAMPLE
 
 #
-# Build main image
+# Build extended main
 #
-FROM builder_symrustc AS builder_main
+FROM builder_symrustc_main AS builder_extended_main
 
 RUN sudo apt-get update \
     && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -297,26 +329,3 @@ COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
 
 RUN cd belcarra_source/examples \
     && $SYMRUSTC_HOME_CPP/main_fold_clang++.sh
-
-#
-# Build concolic Rust examples
-#
-FROM builder_symrustc AS builder_examples_rs
-
-RUN sudo apt-get update \
-    && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        bsdmainutils \
-    && sudo apt-get clean
-
-COPY --chown=ubuntu:ubuntu src/rs belcarra_source/src/rs
-COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
-
-ARG SYMRUSTC_CI
-
-ARG SYMRUSTC_SKIP_FAIL
-
-ARG SYMRUSTC_EXAMPLE0=$HOME/belcarra_source/examples
-
-RUN $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
-
-RUN $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
