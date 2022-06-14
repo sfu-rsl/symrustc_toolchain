@@ -276,9 +276,9 @@ version to use, and it has to be mandatorily provided:
   ARG SYMRUSTC_RUST_VERSION
   ARG SYMRUSTC_BRANCH
   RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
-        git clone -b $SYMRUSTC_RUST_VERSION --depth 1 https://github.com/sfu-rsl/rust.git rust_source; \
+        git clone --depth 1 -b $SYMRUSTC_RUST_VERSION https://github.com/sfu-rsl/rust.git rust_source; \
       else \
-        git clone -b "$SYMRUSTC_BRANCH" --depth 1 https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
+        git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
         ln -s ~/belcarra_source0/src/rs/rust_source; \
       fi
   
@@ -313,7 +313,7 @@ download its source at this stage:
 .. code:: Dockerfile
   
   # Download AFL
-  RUN git clone -b v2.56b https://github.com/google/AFL.git afl
+  RUN git clone --depth 1 -b v2.56b https://github.com/google/AFL.git afl
 
 Building SymCC/Runtime
 ======================
@@ -510,10 +510,11 @@ Composing with SymCC/Runtime.
 .. code:: Dockerfile
   
   ARG SYMRUSTC_RUST_BUILD=$HOME/rust_source/build/x86_64-unknown-linux-gnu
+  ARG SYMRUSTC_RUST_BUILD_STAGE=$SYMRUSTC_RUST_BUILD/stage2
   
   ENV SYMRUSTC_CARGO=$SYMRUSTC_RUST_BUILD/stage0/bin/cargo
-  ENV SYMRUSTC_RUSTC=$SYMRUSTC_RUST_BUILD/stage2/bin/rustc
-  ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD/stage2/lib
+  ENV SYMRUSTC_RUSTC=$SYMRUSTC_RUST_BUILD_STAGE/bin/rustc
+  ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD_STAGE/lib
   ENV PATH=$HOME/.cargo/bin:$PATH
   
   COPY --chown=ubuntu:ubuntu --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH
@@ -591,14 +592,26 @@ builder_symrustc_main: Build SymRustC main (continuing from builder_symrustc)
   COPY --chown=ubuntu:ubuntu src/rs belcarra_source/src/rs
   COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
 
-Our SymRustC installation provides at least two binaries:
+To coordinate the build and run of general Rust programs, one may
+naturally want to use \ ``cargo``\ . In a concolic
+setting though, one may also want to build some Rust source several
+times, with different concolic build options. While ideally these
+different build executions would be all automatically handled by
+\ ``cargo``\ , at the time of writing they do not
+look trivial to realize (without modifying the source of
+\ ``cargo``\ ).
+
+Instead, the SymRustC project is temporarily providing the following
+build scripts:
 \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  to
-compile a Rust example, and
+compile a Rust example (mostly resembling to
+\ ``cargo build``\ ), and
 \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  to run a
-compiled example. Their arguments are all optional, and can be
-provided by prior exporting the following shell variables (e.g. using
-\ ``export``\ ) before executing the intended
-binaries:
+compiled example (mostly resembling to
+\ ``cargo run``\ ). Their arguments are all
+optional, and can be provided by prior exporting the following shell
+variables (e.g. using \ ``export``\ ) before
+executing the respective intended binaries:
 
 - 
   \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ :
@@ -614,13 +627,33 @@ binaries:
     Rust compiler be performed while the compiler is compiling the
     example. By default, this option is set to
     \ ``false``\ .
+    At the time of writing, the use of this option is constrained by the
+    following limitations:
+
+    - The number of Rust source to build must be no more than
+      one.
+
+    - The file to build must exactly be at this location:
+      \ ``$SYMRUSTC_DIR/src/main.rs``\ .
+
+    - A “regular” build with
+      \ ``cargo build``\  must have prior succeeded
+      in \ ``$SYMRUSTC_DIR``\  before invoking
+      \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ ,
+      also with at least all the cargo options that are statically
+      written in:
+      \ ``$SYMRUSTC_HOME_RS/rustc.sh``\ . (Ideally,
+      these static information must be as minimal as possible.)
 
   - Any explicit arguments provided to
     \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  will
     be forwarded to our internal version of
-    \ ``cargo rustc``\  (e.g.
-    \ ``-- -Clinker=clang++``\  to set a specific
-    linker).
+    \ ``cargo rustc --manifest-path $SYMRUSTC_DIR/Cargo.toml``
+    (e.g.  \ ``-- -Clinker=clang++``\  to set a
+    specific linker). In particular, the success of the command is
+    partly relying on the syntax and semantics of
+    \ ``$SYMRUSTC_DIR/Cargo.toml``\  (including the
+    presence of that file).
 
 - \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ :
 
@@ -704,9 +737,8 @@ to compile our test examples):
 
 .. code:: Dockerfile
   
-  ARG SYMRUSTC_EXAMPLE0=$HOME/belcarra_source/examples
-  
-  RUN $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
+  RUN cd belcarra_source/examples \
+      && $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
 
 Ultimately, we can proceed to the concolic execution of each
 binary-compiled-result produced by each respective SymRustC invocation
@@ -714,7 +746,8 @@ binary-compiled-result produced by each respective SymRustC invocation
 
 .. code:: Dockerfile
   
-  RUN $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
+  RUN cd belcarra_source/examples \
+      && $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
 
 Extended usage (with tests)
 ***************************

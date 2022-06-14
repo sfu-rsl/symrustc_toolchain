@@ -68,9 +68,9 @@ ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
 ARG SYMRUSTC_RUST_VERSION
 ARG SYMRUSTC_BRANCH
 RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
-      git clone -b $SYMRUSTC_RUST_VERSION --depth 1 https://github.com/sfu-rsl/rust.git rust_source; \
+      git clone --depth 1 -b $SYMRUSTC_RUST_VERSION https://github.com/sfu-rsl/rust.git rust_source; \
     else \
-      git clone -b "$SYMRUSTC_BRANCH" --depth 1 https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
+      git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
       ln -s ~/belcarra_source0/src/rs/rust_source; \
     fi
 
@@ -93,7 +93,7 @@ RUN if [ -d symcc_source ] ; then \
     fi
 
 # Download AFL
-RUN git clone -b v2.56b https://github.com/google/AFL.git afl
+RUN git clone --depth 1 -b v2.56b https://github.com/google/AFL.git afl
 
 #
 # Set up project dependencies
@@ -203,10 +203,11 @@ RUN export SYMCC_NO_SYMBOLIC_INPUT=yes \
     && /usr/bin/python3 ./x.py build --stage 2
 
 ARG SYMRUSTC_RUST_BUILD=$HOME/rust_source/build/x86_64-unknown-linux-gnu
+ARG SYMRUSTC_RUST_BUILD_STAGE=$SYMRUSTC_RUST_BUILD/stage2
 
 ENV SYMRUSTC_CARGO=$SYMRUSTC_RUST_BUILD/stage0/bin/cargo
-ENV SYMRUSTC_RUSTC=$SYMRUSTC_RUST_BUILD/stage2/bin/rustc
-ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD/stage2/lib
+ENV SYMRUSTC_RUSTC=$SYMRUSTC_RUST_BUILD_STAGE/bin/rustc
+ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD_STAGE/lib
 ENV PATH=$HOME/.cargo/bin:$PATH
 
 COPY --chown=ubuntu:ubuntu --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH
@@ -241,11 +242,11 @@ ARG SYMRUSTC_CI
 
 ARG SYMRUSTC_SKIP_FAIL
 
-ARG SYMRUSTC_EXAMPLE0=$HOME/belcarra_source/examples
+RUN cd belcarra_source/examples \
+    && $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
 
-RUN $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
-
-RUN $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
+RUN cd belcarra_source/examples \
+    && $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
 
 #
 # Build additional tools
@@ -254,12 +255,13 @@ FROM builder_symrustc AS builder_addons
 
 ARG SYMRUSTC_CI
 
+COPY --chown=ubuntu:ubuntu src/rs/env0.sh $SYMRUSTC_HOME_RS/
+COPY --chown=ubuntu:ubuntu src/rs/env.sh $SYMRUSTC_HOME_RS/
+COPY --chown=ubuntu:ubuntu src/rs/parse_args.sh $SYMRUSTC_HOME_RS/
 COPY --chown=ubuntu:ubuntu src/rs/wait_all.sh $SYMRUSTC_HOME_RS/
-COPY --chown=ubuntu:ubuntu src/rs/cargo.sh $SYMRUSTC_HOME_RS/
 
-RUN source $SYMRUSTC_HOME_RS/wait_all.sh \
-    && export SYMRUSTC_EXAMPLE=~/symcc_source/util/symcc_fuzzing_helper \
-    && $SYMRUSTC_HOME_RS/cargo.sh install --path $SYMRUSTC_EXAMPLE
+RUN cd ~/symcc_source/util/symcc_fuzzing_helper \
+    && $SYMRUSTC_HOME_RS/env.sh $SYMRUSTC_CARGO install --path $PWD
 
 #
 # Build extended main
