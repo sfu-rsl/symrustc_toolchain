@@ -609,79 +609,254 @@ compile a Rust example (mostly resembling to
 \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  to run a
 compiled example (mostly resembling to
 \ ``cargo run``\ ). Their arguments are all
-optional, and can be provided by prior exporting the following shell
+optional, and can be provided by prior exporting some custom shell
 variables (e.g. using \ ``export``\ ) before
-executing the respective intended binaries:
+executing the respective intended binaries.
 
-- 
-  \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ :
+Before giving more details about the command internals and which
+arguments to export, we suppose the reader already familiar with SymCC
+and all its invocation options. This includes for example how to
+invoke SymCC on the basic example provided in the accompanying
+documentation:
+\ `https://github.com/eurecom-s3/symcc/blob/master/README.md <https://github.com/eurecom-s3/symcc/blob/master/README.md>`_\ ,
+what kind of back-end or solving process is performed while SymCC is
+in execution, and where to find the results of the tool on the
+filesystem after the tool completion.
 
-  - Exporting the variable
-    \ ``$SYMRUSTC_DIR``\  can be used to set a
-    specific compilation directory other than the current working
-    directory (namely \ ``$PWD``\ ).
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ : description of the command
+-----------------------------------------------------------------------
 
-  - Exporting the variable
-    \ ``$SYMRUSTC_BUILD_COMP_CONCOLIC``\  with
-    \ ``true``\  makes the concolic execution of the
-    Rust compiler be performed while the compiler is compiling the
-    example. By default, this option is set to
-    \ ``false``\ .
-    At the time of writing, the use of this option is constrained by the
-    following limitations:
+Any explicit arguments provided to
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  are all
+forwarded to our internal version of
+\ ``cargo rustc --manifest-path $SYMRUSTC_DIR/Cargo.toml``
+(e.g.  \ ``-- -Clinker=clang++``\  to set a
+specific linker). In particular, the success of the command is partly
+relying on the syntax and semantics of
+\ ``$SYMRUSTC_DIR/Cargo.toml``\  (including the
+presence of that file).
 
-    - The number of Rust source to build must be no more than
-      one.
+Our default version of \ ``cargo rustc``\  is
+actually run at least twice (depending on
+\ ``$SYMRUSTC_BUILD_COMP_CONCOLIC``\  subsequently
+described), leading to at least two output directories:
 
-    - The file to build must exactly be at this location:
-      \ ``$SYMRUSTC_DIR/src/main.rs``\ .
+- \ ``$SYMRUSTC_DIR/target_cargo_off``
+  having the same content as what would be obtained by a “regular”
+  invocation of \ ``cargo rustc``\ , i.e. without
+  invoking in the end the SymCC/compiler process at the LLVM pass
+  treatment, and
 
-    - A “regular” build with
-      \ ``cargo build``\  must have prior succeeded
-      in \ ``$SYMRUSTC_DIR``\  before invoking
-      \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ ,
-      also with at least all the cargo options that are statically
-      written in:
-      \ ``$SYMRUSTC_HOME_RS/rustc.sh``\ . (Ideally,
-      these static information must be as minimal as possible.)
+- \ ``$SYMRUSTC_DIR/target_cargo_on``
+  containing this time the intended concolic binary after enabling the
+  invocation of the SymCC/compiler.
 
-  - Any explicit arguments provided to
-    \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  will
-    be forwarded to our internal version of
-    \ ``cargo rustc --manifest-path $SYMRUSTC_DIR/Cargo.toml``
-    (e.g.  \ ``-- -Clinker=clang++``\  to set a
-    specific linker). In particular, the success of the command is
-    partly relying on the syntax and semantics of
-    \ ``$SYMRUSTC_DIR/Cargo.toml``\  (including the
-    presence of that file).
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ : description of the optional arguments to export
+--------------------------------------------------------------------------------------------
 
-- \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ :
+- Exporting the variable
+  \ ``$SYMRUSTC_DIR``\  can be used to set a specific
+  compilation directory other than the current working directory (namely
+  \ ``$PWD``\ ).
 
-  - Exporting the variable
-    \ ``$SYMRUSTC_DIR``\  can be used to set a
-    specific execution directory other than the current working
-    directory (namely \ ``$PWD``\ ).
+- Exporting the variable
+  \ ``$SYMRUSTC_BUILD_COMP_CONCOLIC``\  with
+  \ ``true``\  makes the concolic execution of the
+  Rust compiler be performed while the compiler is compiling the
+  example. (The ability to run the Rust compiler itself in concolic mode
+  comes from the fact that our version of SymRustC has been partly
+  bootstrapped with SymRustC — i.e. at least internally, from stage 1
+  to stage 2.) By default, this option is set to
+  \ ``false``\ .
+  At the time of writing, the use of this option is constrained by the
+  following limitations:
 
-  - Exporting the variable
-    \ ``$SYMRUSTC_RUN_EXPECTED_CODE``\  with a
-    non-null exit code will make our test framework expecting the exit
-    code of our running example to be that code instead of the classic
-    zero.
+  - The number of Rust source to build must be no more than one.
+  - The file to build must exactly be at this location:
+    \ ``$SYMRUSTC_DIR/src/main.rs``\ .
+  - A “regular” build with
+    \ ``cargo build``\  must have prior succeeded
+    in \ ``$SYMRUSTC_DIR``\  before invoking
+    \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ ,
+    also with at least all the cargo options that are statically
+    written in:
+    \ ``$SYMRUSTC_HOME_RS/rustc.sh``\ . (Ideally,
+    these static information must be as minimal as possible.)
 
-  - Exporting the variable
-    \ ``$SYMRUSTC_RUN_EXPECTED_COUNT``\  with an
-    integer will make our test framework expecting the number of answers
-    provided by our running concolic example to be that integer. When no
-    integer is provided, that expectation-check part will be skipped.
+  Ultimately, we obtain additional compilation folders, corresponding to
+  different combinations of options that may be exclusively submitted at
+  a time to SymCC:
 
-  - Any explicit arguments provided to
-    \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  will be
-    forwarded to \ ``echo``\ , which is internally
-    used to produce some output that will be provided as input to our
-    compiled-binary example (e.g. usual options (of
-    \ ``echo``\ ) such as
-    \ ``-n``\  can be used to better control the
-    appearance of the trailing newline sent to our binary example).
+  - When \ ``$SYMCC_NO_SYMBOLIC_INPUT``\  is
+    set to some value, irrespective of how the input may be provided,
+    these folders are:
+
+    - \ ``$SYMRUSTC_DIR/target_rustc_none_off``
+    - \ ``$SYMRUSTC_DIR/target_rustc_none_on``
+
+  - When the input is provided through
+    \ ``$SYMCC_INPUT_FILE``\ , these folders are:
+
+    - \ ``$SYMRUSTC_DIR/target_rustc_file_off``
+    - \ ``$SYMRUSTC_DIR/target_rustc_file_on``
+
+  - When the input is provided by a pipe from the standard input,
+    these folders are:
+
+    - \ ``$SYMRUSTC_DIR/target_rustc_stdin_off``
+    - \ ``$SYMRUSTC_DIR/target_rustc_stdin_on``
+
+
+  Note that each “\ ``_on``\ ” and
+  “\ ``_off``\ ” folder-suffixes are re-employing
+  the same conventions as the directory-names produced by the script
+  when for example
+  \ ``$SYMRUSTC_BUILD_COMP_CONCOLIC``\  is set to
+  \ ``false``\ .
+
+- Exporting the variable
+  \ ``$SYMRUSTC_SKIP_CONCOLIC_OFF``\  with some value
+  allows to skip the call to the \ ``cargo rustc``
+  responsible of generating
+  \ ``$SYMRUSTC_DIR/target_cargo_off``\ .
+
+- Exporting the variable
+  \ ``$SYMRUSTC_SKIP_CONCOLIC_ON``\  with some value
+  allows to skip the call to the \ ``cargo rustc``
+  responsible of generating
+  \ ``$SYMRUSTC_DIR/target_cargo_on``\ .
+
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ : description of the command
+---------------------------------------------------------------------
+
+While \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``
+can be thought of as executing the compiler part of SymCC to compile a
+high-level source for concolic execution,
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  can be
+basically seen as a handy wrapper to call the so-compiled concolic
+binary with specific options.
+
+Technically,
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  is
+producing \ *several*\  binaries, and each one may
+possibly have a different concolic-power-coverage than others. To
+simplify the explanation, we can however use by abuse of language
+\ ``$SYMRUSTC_BIN``\  to designate one of those
+binaries without mentioning which one. (In this case, in any context
+where that abbreviation is used, the properties in discussion will
+have to generally hold for \ *all*\  binaries.)
+
+For example, if
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  has
+succeeded in producing one compiled Rust
+\ ``$SYMRUSTC_BIN``\ , then an execution of
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh $input_args``
+will principally have the internal effect of executing the following
+shell-code:
+\ ``echo $input_args | $SYMRUSTC_BIN``\  (c.f. for
+instance the documentation of SymCC).
+
+In particular, the ideal concolic-scenario is reached when
+\ ``$SYMRUSTC_BIN``\  has originally been
+implemented to do meaningful side-effects after receiving its input
+from the standard input. If this is not the case, then the reader is
+referred to the paragraph describing how one can export the variable
+\ ``$SYMRUSTC_BIN_ARGS``\  for potentially covering
+a more general situation.
+
+Note that here usual options of \ ``echo``\  such
+as \ ``-n``\  can be put in
+\ ``$input_args``\  to better control the
+appearance of the trailing newline sent to
+\ ``$SYMRUSTC_BIN``\ .
+
+The case of multiple binaries to concolic run goes by generalization:
+unless otherwise noticed, we will generally not assume any specific
+non-asynchronous evaluation order
+
+- regarding the moment when each concolic run of the Rust compiler
+  generating its \ ``$SYMRUSTC_BIN``\  is called
+  by \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ ,
+  or
+- regarding the moment when each concolic run of
+  \ ``$SYMRUSTC_BIN``\  is called by
+  \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ .
+
+Note that, on the other hand, some best efforts should be made by the
+two scripts
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  and
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  for their
+printed information to be sequentially presented, so that we would
+best understand them. However as first experiments, it can be useful
+to just ignore the standard error
+\ ``2>/dev/null``\  of the two scripts.
+
+Generally, since
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  is
+producing several binaries,
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  is taking
+care of setting \ ``$SYMCC_OUTPUT_DIR``\  to some
+local path for each binary, inside each respective
+\ ``$SYMRUSTC_DIR/target_*/*/*/output``
+folder. So, in contrast with the default setting of SymCC, any
+potential initial value of
+\ ``$SYMCC_OUTPUT_DIR``\  already set in the
+environment may here be ignored by SymRustC (i.e. both
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  and
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  may
+override \ ``$SYMCC_OUTPUT_DIR``\ ).
+
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ : description of the optional arguments to export
+------------------------------------------------------------------------------------------
+
+- Exporting the variable
+  \ ``$SYMRUSTC_DIR``\  can be used to set a specific
+  execution directory other than the current working directory (namely
+  \ ``$PWD``\ ).
+
+- Exporting the variable
+  \ ``$SYMRUSTC_RUN_EXPECTED_CODE``\  with a non-null
+  exit code will make our test framework expecting the exit code of
+  (all) \ ``$SYMRUSTC_BIN``\  to be that code instead
+  of the classic zero.
+
+- Exporting the variable
+  \ ``$SYMRUSTC_RUN_EXPECTED_COUNT``\  with an
+  integer will make our test framework expecting the number of answers
+  provided by (all) \ ``$SYMRUSTC_BIN``\  to be that
+  integer. When no integer is provided, that expectation-check part will
+  be skipped.
+
+- Exporting the variable
+  \ ``$SYMRUSTC_BIN_ARGS``\  with some
+  space-separated parameters allows to fine-grain forward these
+  parameters to \ ``$SYMRUSTC_BIN``\ .
+
+  This is especially relevant in the unfortunate situation where
+  \ ``$SYMRUSTC_BIN``\  is only reading its input
+  from function-parameters (at least not from the standard input).
+
+  For example, if the Rust binary
+  \ ``$SYMRUSTC_BIN``\  is implementing the
+  “classic” shell command \ ``echo``\ , called here
+  \ ``echo_rs``\ , then an execution of
+  \ ``echo $input_args | echo_rs $SYMRUSTC_BIN_ARGS``
+  will likely not print anything noticeable in case
+  \ ``$SYMRUSTC_BIN_ARGS``\  is empty (or differing
+  too much from \ ``$input_args``\ ).
+
+  At a higher level, one first tentative to remedy to the problem is to
+  implicitly let \ ``echo_rs``\  forcing the read
+  from its concolic-input \ ``$input_args``\  by
+  setting \ ``$SYMRUSTC_BIN_ARGS``\  to lazy-read its
+  standard input as follows:
+
+  - \ ``SYMRUSTC_BIN_ARGS='$(cat /dev/stdin)' $SYMRUSTC_HOME_RS/symrustc_run.sh $input_args``
+
+  Note the enclosing using the special quote character
+  “\ ``'``\ ” instead of
+  “\ ``"``\ ” to prevent a too eager evaluation
+  from happening.
 
 Applying SymRustC on multiple examples
 ======================================
@@ -726,14 +901,8 @@ arbitrary value:
   
   ARG SYMRUSTC_SKIP_FAIL
 
-At this point, we are ready to start the concolic execution using
-SymRustC.
-
-Due to the fact that our version of SymRustC has been bootstrapped
-with SymRustC (at least internally, e.g. from stage 1 to stage 2), we
-can start the tests by performing the concolic execution on the own
-source of RustC (while \ ``rustc``\  is instructed
-to compile our test examples):
+At this point, we are ready to start the concolic build of the
+examples.
 
 .. code:: Dockerfile
   
@@ -741,8 +910,7 @@ to compile our test examples):
       && $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
 
 Ultimately, we can proceed to the concolic execution of each
-binary-compiled-result produced by each respective SymRustC invocation
-(obtained above from \ ``rustc``\ ):
+binary-result produced by the above SymRustC invocation:
 
 .. code:: Dockerfile
   
