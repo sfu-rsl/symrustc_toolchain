@@ -5,6 +5,10 @@
 
 set -euo pipefail
 
-source $SYMRUSTC_HOME_RS/parse_args0.sh
+source $SYMRUSTC_HOME_RS/libafl_swap.sh
 
-cat $SYMRUSTC_INPUT_FILE | $SYMRUSTC_HOME_RS/rustc.sh - "$@"
+swap
+err=0
+./target_symcc.out "$@" || err=$?
+swap
+exit $err
