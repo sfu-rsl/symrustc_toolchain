@@ -2,8 +2,8 @@
 
 .. Copyright (C) 2021-2022 Simon Fraser University (www.sfu.ca)
 
-SymRustC
-********
+SymRustC: Presentation
+**********************
 
 SymRustC is a tool implemented in the Belcarra project
 (\ `https://github.com/sfu-rsl <https://github.com/sfu-rsl>`_\ ) for practical and
@@ -57,8 +57,8 @@ top to bottom in nesting sub-encapsulation-module order):
 Note that, at the time of writing, no modifications were made on the
 last two components, QSYM and Z3.
 
-Installing SymRustC
-*******************
+SymRustC: Installation
+**********************
 
 SymRustC should be easily installable/usable on most platforms and
 operating systems supported by the Rust compiler and SymCC.
@@ -253,6 +253,11 @@ the rest of the document:
   
   ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
 
+.. code:: Dockerfile
+  
+  ENV SYMRUSTC_LIBAFL_SOLVING_DIR=$HOME/libafl/fuzzers/libfuzzer_rust_concolic
+  ENV SYMRUSTC_LIBAFL_TRACING_DIR=$HOME/libafl/libafl_concolic/test
+
 The first SymRustC component to install is our custom Rust
 compiler. (Note that at the time of writing, our modifications mainly
 intervened in the compiler bootstrap part, no significant changes
@@ -288,6 +293,7 @@ version to use, and it has to be mandatorily provided:
   
   #
   RUN ln -s ~/rust_source/src/llvm-project llvm_source
+  RUN git clone -b rust_runtime/11 https://github.com/sfu-rsl/LibAFL.git libafl
   RUN ln -s ~/llvm_source/symcc symcc_source
 
 At the time of writing, the build of SymCC/Runtime is not yet
@@ -302,7 +308,7 @@ SymCC/Runtime source inside this new folder:
         cd symcc_source \
         && current=$(git log -1 --pretty=format:%H) \
   # Note: Ideally, all submodules must also follow the change of version happening in the super-root project.
-        && git checkout origin/main/$(git branch -r --contains "$current" | tr '/' '\n' | tail -n 1) \
+        && git checkout origin/main/$(git branch -r --contains "$current" | cut -d '/' -f 3-) \
         && cp -a . ~/symcc_source_main \
         && git checkout "$current"; \
       fi
@@ -450,6 +456,7 @@ This part focuses on the main build of SymRustC.
   
   #
   
+  COPY --chown=ubuntu:ubuntu --from=builder_symcc_qsym $HOME/symcc_build_simple symcc_build_simple
   COPY --chown=ubuntu:ubuntu --from=builder_symcc_qsym $HOME/symcc_build symcc_build
   
   RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu
@@ -496,13 +503,15 @@ Composing with SymCC/Runtime.
 
 .. code:: Dockerfile
   
+  ENV SYMRUSTC_RUNTIME_DIR=$HOME/symcc_build/SymRuntime-prefix/src/SymRuntime-build
+  
   RUN export SYMCC_NO_SYMBOLIC_INPUT=yes \
       && cd rust_source \
       && sed -e 's/#ninja = false/ninja = true/' \
           config.toml.example > config.toml \
       && sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
           src/librustc_span/analyze_source_file.rs \
-      && export SYMCC_RUNTIME_DIR=~/symcc_build/SymRuntime-prefix/src/SymRuntime-build \
+      && export SYMCC_RUNTIME_DIR=$SYMRUSTC_RUNTIME_DIR \
       && /usr/bin/python3 ./x.py build --stage 2
 
 
@@ -562,19 +571,8 @@ type of compiler used, so using the syntactic word
 \ ``symcc``\  is one way to avoid violating those
 syntactic check!
 
-Installation summary
-********************
-
-In summary, the following start script has been provided for building
-everything presented in the document:
-
-- \ `https://github.com/sfu-rsl/symrustc/blob/main/build_all.sh <https://github.com/sfu-rsl/symrustc/blob/main/build_all.sh>`_
-
-Note that, at the time of writing, this script is internally assuming
-that \ ``docker``\  is installed.
-
-Usage
-*****
+SymRustC: Usage
+***************
 
 Applying SymRustC on a single example
 =====================================
@@ -626,30 +624,61 @@ filesystem after the tool completion.
 \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ : description of the command
 -----------------------------------------------------------------------
 
-Any explicit arguments provided to
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  builds
+some Rust source using our implemented SymRustC version of
+rustc. Internally, the script is making a particular global
+declaration of \ ``$RUSTFLAGS``\  before executing
+our modified version of rustc through
+\ ``cargo rustc``\  (ignoring any potential
+existing declarations of
+\ ``$RUSTFLAGS``\ ). Nevertheless, in the rest, we
+will use \ ``cargo symrustc``\  as a notation to
+emphasize that it is the custom SymRustC version of rustc that is
+being used (instrumented by SymCC in the end), and then to avoid any
+potential ambiguities with the (uninstrumented) official rustc
+compiler.
+
+Operationally, any explicit arguments provided to
 \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  are all
-forwarded to our internal version of
-\ ``cargo rustc --manifest-path $SYMRUSTC_DIR/Cargo.toml``
-(e.g.  \ ``-- -Clinker=clang++``\  to set a
-specific linker). In particular, the success of the command is partly
-relying on the syntax and semantics of
-\ ``$SYMRUSTC_DIR/Cargo.toml``\  (including the
-presence of that file).
+forwarded to \ ``cargo symrustc --manifest-path $SYMRUSTC_DIR/Cargo.toml``
+(e.g. \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh -- -Clinker=clang++``
+to set a specific linker). As a consequence,
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  accepts
+the same arguments as
+\ ``cargo rustc``\ , and in addition, its success
+depends on the implicit presence of
+\ ``$SYMRUSTC_DIR/Cargo.toml``\ , as well as the
+well-formedness content of that latter file.
 
-Our default version of \ ``cargo rustc``\  is
-actually run at least twice (depending on
-\ ``$SYMRUSTC_BUILD_COMP_CONCOLIC``\  subsequently
-described), leading to at least two output directories:
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  is
+actually configured to make \ *multiple*\  and
+independent calls to \ ``cargo symrustc``\ ,
+i.e. with different options provided to each
+\ ``cargo symrustc``\  called (the number of
+multiple invocations is partly depending on
+\ ``$SYMRUSTC_BUILD_COMP_CONCOLIC``\ , subsequently
+described).
 
-- \ ``$SYMRUSTC_DIR/target_cargo_off``
-  having the same content as what would be obtained by a “regular”
-  invocation of \ ``cargo rustc``\ , i.e. without
-  invoking in the end the SymCC/compiler process at the LLVM pass
-  treatment, and
+The output folder that would likely be the most interesting for an
+end-user is
+\ ``$SYMRUSTC_DIR/target_cargo_on``\ . It contains
+the compiled binary instrumented by SymCC/compiler.
 
-- \ ``$SYMRUSTC_DIR/target_cargo_on``
-  containing this time the intended concolic binary after enabling the
-  invocation of the SymCC/compiler.
+A secondary folder usually found after the invocation is
+\ ``$SYMRUSTC_DIR/target_cargo_off``\ . This
+advance folder can just be ignored by most users: it has the same
+content as \ ``$SYMRUSTC_DIR/target_cargo_on``
+except that the SymCC/compiler process was explicitly not enabled at
+the LLVM pass of all respective
+\ ``cargo symrustc``\  invocations. (This does not
+generally mean that concolic SMT solving are skipped, since we are
+still relying on a concolic version of the Rust libraries,
+irrespective of the build options provided to
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ . Note
+that the Rust libraries were originally compiled during the bootstrap
+of the Rust compiler, and subsequently made to be present in the
+compiling environment scope of
+\ ``cargo symrustc``\ .)
 
 \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ : description of the optional arguments to export
 --------------------------------------------------------------------------------------------
@@ -906,6 +935,11 @@ examples.
 
 .. code:: Dockerfile
   
+  ARG SYMRUSTC_VERBOSE
+  ARG SYMRUSTC_EXEC_CONCOLIC_OFF=yes
+
+.. code:: Dockerfile
+  
   RUN cd belcarra_source/examples \
       && $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
 
@@ -916,6 +950,407 @@ binary-result produced by the above SymRustC invocation:
   
   RUN cd belcarra_source/examples \
       && $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
+
+SymRustC/LibAFL: Presentation
+*****************************
+
+LibAFL contains a runtime back-end mainly implemented in Rust. This
+Rust back-end is comparatively similar to the simple Z3 back-end or
+QSYM back-end, although these last two are principally implemented in
+C++.
+
+LibAFL is a generic library dedicated to do diverse fuzzing
+experiments, where one can perform among others concolic execution and
+fuzzing simulation at the same time. This is where we take advantage
+of SymRustC: after generating a concolic binary from a Rust source in
+input using SymRustC, that binary is taken as a black-box utensil to
+be repeatedly executed by LibAFL with various random testing concolic
+arguments, until finding any undesired behavior or bug.
+
+While the LibAFL library has the necessary basic ingredients for
+building any complex and large fuzzing-applications of interest, the
+original source also contains several examples of possible
+applications. We will notably focus on:
+
+- \ *LibAFL tracing*\  which is printing the
+  runtime trace contained in a concolic binary (without executing that
+  trace),
+
+- \ *LibAFL solving*\  which is fully
+  executing the concolic binary, i.e. with regular Z3 calls performed
+  during the run.
+
+Source preparation
+==================
+
+Since LibAFL is relying on the Rust compiler, it could be an idea to
+try re-using the Rust compiler we previously built for
+SymRustC. However, its version may not be recent enough for compiling
+the latest LibAFL version. So we are explicitly installing here a
+compatible compiler version.
+
+builder_base_rust: Set up Ubuntu/Rust environment (continuing from builder_symrustc)
+------------------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  ENV RUSTUP_HOME=$HOME/rustup \
+      CARGO_HOME=$HOME/cargo \
+      PATH=$HOME/cargo/bin:$PATH \
+      RUST_VERSION=1.62.1
+  
+  # https://github.com/rust-lang/docker-rust/blob/8a5c9907090efde7e259bc0c51f951b7383c62e6/1.62.1/bullseye/Dockerfile
+  RUN set -eux; \
+      dpkgArch="$(dpkg --print-architecture)"; \
+      case "${dpkgArch##*-}" in \
+          amd64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='3dc5ef50861ee18657f9db2eeb7392f9c2a6c95c90ab41e45ab4ca71476b4338' ;; \
+          armhf) rustArch='armv7-unknown-linux-gnueabihf'; rustupSha256='67777ac3bc17277102f2ed73fd5f14c51f4ca5963adadf7f174adf4ebc38747b' ;; \
+          arm64) rustArch='aarch64-unknown-linux-gnu'; rustupSha256='32a1532f7cef072a667bac53f1a5542c99666c4071af0c9549795bbdb2069ec1' ;; \
+          i386) rustArch='i686-unknown-linux-gnu'; rustupSha256='e50d1deb99048bc5782a0200aa33e4eea70747d49dffdc9d06812fd22a372515' ;; \
+          *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+      esac; \
+      url="https://static.rust-lang.org/rustup/archive/1.24.3/${rustArch}/rustup-init"; \
+      curl -O "$url"; \
+      echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
+      chmod +x rustup-init; \
+      ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION --default-host ${rustArch}
+  
+  RUN rustup component add rustfmt
+
+SymRustC/LibAFL: Tracing concolic binaries
+******************************************
+
+Installation
+============
+
+builder_libafl_tracing: Build LibAFL tracing runtime (continuing from builder_base_rust)
+----------------------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  ARG SYMRUSTC_CI
+  
+  RUN if [[ -v SYMRUSTC_CI ]] ; then \
+        mkdir ~/libafl/target; \
+      else \
+        cd $SYMRUSTC_LIBAFL_TRACING_DIR \
+        && cargo build -p runtime_test \
+        && cargo build -p dump_constraints; \
+      fi
+
+builder_libafl_tracing_main: Build LibAFL tracing runtime main (continuing from builder_symrustc_main)
+------------------------------------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  COPY --chown=ubuntu:ubuntu --from=builder_libafl_tracing $HOME/libafl/target $HOME/libafl/target
+  
+  # Pointing to the Rust runtime back-end
+  RUN cd -P $SYMRUSTC_RUNTIME_DIR/.. \
+      && ln -s ~/libafl/target/debug "$(basename $SYMRUSTC_RUNTIME_DIR)0"
+  
+  RUN source $SYMRUSTC_HOME_RS/libafl_swap.sh \
+      && swap
+
+Usage
+=====
+
+The installation provides the following scripts to be subsequently
+described:
+
+- \ ``$SYMRUSTC_HOME_RS/libafl_tracing_build.sh``\  (internally calling \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ )
+- \ ``$SYMRUSTC_HOME_RS/libafl_tracing_run.sh``\  (internally calling \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ )
+
+
+These scripts are parameterizing the way they execute their concolic
+binary. This is in particular feasible due to the fact that the
+concolic back-end of a binary can be dynamically changed.
+
+The parameterization made by the
+\ *tracing back-end*\  (as part of LibAFL) is to not
+proceed to the default evaluation of instrumented instructions of a
+binary. Instead, the back-end just prints them.
+
+In particular, the other side-effects of concolic binaries are
+happening as usual, i.e. through their uninstrumented
+instructions. (This is similar to executing a binary with the option
+\ ``SYMCC_NO_SYMBOLIC_INPUT=yes``\ , see the
+associated SymCC documentation.)
+
+\ ``$SYMRUSTC_HOME_RS/libafl_tracing_build.sh``\ : description of the command
+-----------------------------------------------------------------------------
+
+\ ``$SYMRUSTC_HOME_RS/libafl_tracing_build.sh``
+has the same semantics as
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ , except
+that all concolic binaries called by
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``
+(i.e. all concolic Rust compiler binaries) are invoked with the
+\ *tracing back-end*\ , e.g. instead of using the
+default QSYM back-end.
+
+\ ``$SYMRUSTC_HOME_RS/libafl_tracing_build.sh``\ : description of the optional arguments to export
+--------------------------------------------------------------------------------------------------
+
+- Exporting the variable
+  \ ``$SYMRUSTC_DIR``\  can be used to set a specific
+  compilation directory other than the current working directory (namely
+  \ ``$PWD``\ ).
+
+- Exporting the variable
+  \ ``$SYMRUSTC_LIBAFL_TRACING_DIR``\  with a
+  specific path should not be used, unless one wants to change the
+  directory of the tracing program. Note that we have already globally
+  exported this variable, e.g. see the beginning of the associated
+  \ ``Dockerfile``\ .
+
+- Exporting the variable
+  \ ``$SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_TRACING``
+  with some value will ignore the exit code of the calling
+  \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ . The
+  default behavior is to exit with that same exit code.
+
+\ ``$SYMRUSTC_HOME_RS/libafl_tracing_run.sh``\ : description of the command
+---------------------------------------------------------------------------
+
+\ ``$SYMRUSTC_HOME_RS/libafl_tracing_run.sh``
+has the same semantics as
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ , except
+that all concolic binaries called by
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``
+(i.e. those binaries generated by
+\ ``$SYMRUSTC_HOME_RS/libafl_tracing_build.sh``\ )
+are invoked with the \ *tracing back-end*\ ,
+e.g. instead of using the default QSYM back-end.
+
+\ ``$SYMRUSTC_HOME_RS/libafl_tracing_run.sh``\ : description of the optional arguments to export
+------------------------------------------------------------------------------------------------
+
+- Exporting the variable
+  \ ``$SYMRUSTC_DIR``\  can be used to set a specific
+  compilation directory other than the current working directory (namely
+  \ ``$PWD``\ ).
+
+- Exporting the variable
+  \ ``$SYMRUSTC_LIBAFL_TRACING_DIR``\  with a
+  specific path should not be used, unless one wants to change the
+  directory of the tracing program. Note that we have already globally
+  exported this variable, e.g. see the beginning of the associated
+  \ ``Dockerfile``\ .
+
+builder_libafl_tracing_example: Build concolic Rust examples for LibAFL tracing (continuing from builder_libafl_tracing_main)
+-----------------------------------------------------------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  ARG SYMRUSTC_CI
+  ARG SYMRUSTC_LIBAFL_EXAMPLE=$HOME/belcarra_source/examples/source_0_original_1c_rs
+  ARG SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_TRACING
+  
+  RUN if [[ -v SYMRUSTC_CI ]] ; then \
+        echo "Ignoring the execution" >&2; \
+      else \
+        cd $SYMRUSTC_LIBAFL_EXAMPLE \
+        && $SYMRUSTC_HOME_RS/libafl_tracing_build.sh; \
+      fi
+  
+  RUN if [[ -v SYMRUSTC_CI ]] ; then \
+        echo "Ignoring the execution" >&2; \
+      else \
+        cd $SYMRUSTC_LIBAFL_EXAMPLE \
+  # Note: target_cargo_off can be kept but its printed trace would be less informative than the one of target_cargo_on, and by default, only the first trace seems to be printed.
+        && rm -rf target_cargo_off \
+        && $SYMRUSTC_HOME_RS/libafl_tracing_run.sh test; \
+      fi
+
+SymRustC/LibAFL: Solving concolic binaries
+******************************************
+
+Installation
+============
+
+builder_libafl_solving: Build LibAFL solving runtime (continuing from builder_base_rust)
+----------------------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  ARG SYMRUSTC_CI
+  
+  RUN if [[ -v SYMRUSTC_CI ]] ; then \
+        echo "Ignoring the execution" >&2; \
+      else \
+        cargo install cargo-make; \
+      fi
+  
+  # Building the client-server main fuzzing loop
+  RUN if [[ -v SYMRUSTC_CI ]] ; then \
+        mkdir $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target; \
+        echo "Ignoring the execution" >&2; \
+      else \
+        cd $SYMRUSTC_LIBAFL_SOLVING_DIR \
+        && PATH=~/clang_symcc_off:"$PATH" cargo make test; \
+      fi
+
+builder_libafl_solving_main: Build LibAFL solving runtime main (continuing from builder_symrustc_main)
+------------------------------------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  RUN sudo apt-get update \
+      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  # Installing "nc" to later check if a given port is opened or closed
+          netcat-openbsd \
+          psmisc \
+      && sudo apt-get clean
+  
+  COPY --chown=ubuntu:ubuntu --from=builder_libafl_solving $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target
+  COPY --chown=ubuntu:ubuntu --from=builder_libafl_solving $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target
+  
+  # Pointing to the Rust runtime back-end
+  RUN cd -P $SYMRUSTC_RUNTIME_DIR/.. \
+      && ln -s $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target/release "$(basename $SYMRUSTC_RUNTIME_DIR)0"
+  
+  # TODO: file name to be generalized
+  RUN ln -s $SYMRUSTC_HOME_RS/libafl_solving_bin.sh $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target_symcc0.out
+
+Usage
+=====
+
+The installation provides the following scripts to be subsequently
+described:
+
+- \ ``$SYMRUSTC_HOME_RS/libafl_solving_build.sh``\  (internally calling \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ )
+- \ ``$SYMRUSTC_HOME_RS/libafl_solving_run.sh``\  (internally calling \ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ )
+
+
+These scripts are parameterizing the way they execute their concolic
+binary. This is in particular feasible due to the fact that the
+concolic back-end of a binary can be dynamically changed.
+
+The parameterization made by the
+\ *solving back-end*\  (as part of LibAFL) is to
+proceed to the default evaluation of instrumented instructions of a
+binary as usual, e.g. as with the QSYM back-end.
+
+\ ``$SYMRUSTC_HOME_RS/libafl_solving_build.sh``\ : description of the command
+-----------------------------------------------------------------------------
+
+\ ``$SYMRUSTC_HOME_RS/libafl_solving_build.sh``
+has the same semantics as
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ , except
+that all concolic binaries called by
+\ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``
+(i.e. all concolic Rust compiler binaries) are invoked with the
+\ *solving back-end*\ , e.g. instead of using the
+default QSYM back-end.
+
+\ ``$SYMRUSTC_HOME_RS/libafl_solving_build.sh``\ : description of the optional arguments to export
+--------------------------------------------------------------------------------------------------
+
+- Exporting the variable
+  \ ``$SYMRUSTC_DIR``\  can be used to set a specific
+  compilation directory other than the current working directory (namely
+  \ ``$PWD``\ ).
+
+- Exporting the variable
+  \ ``SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_SOLVING``
+  with some value should not be used, unless one wants to not execute
+  the underlying
+  \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\ : if
+  this is the case, then instead of executing it, a binary is directly
+  downloaded from a remote link, and placed in the folder where
+  \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  would
+  have otherwise generated a binary. This option is typically useful as
+  last resort, in situations where the build with
+  \ ``$SYMRUSTC_HOME_RS/symrustc_build.sh``\  would
+  fail (e.g. whenever the SymCC backend used by SymRustC is too
+  recent, and is generating a concolic binary different than what would
+  an older SymCC backend generate).
+
+\ ``$SYMRUSTC_HOME_RS/libafl_solving_run.sh``\ : description of the command
+---------------------------------------------------------------------------
+
+\ ``$SYMRUSTC_HOME_RS/libafl_solving_run.sh``
+starts a client-server fuzzing loop generating random inputs to
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\ . The
+simulation loop stops when its encoded objective is reached, typically
+when an abnormal exit code of
+\ ``$SYMRUSTC_HOME_RS/symrustc_run.sh``\  is
+encountered.
+
+\ ``$SYMRUSTC_HOME_RS/libafl_solving_run.sh``\ : description of the optional arguments to export
+------------------------------------------------------------------------------------------------
+
+- Exporting the variable
+  \ ``$SYMRUSTC_DIR``\  can be used to set a specific
+  compilation directory other than the current working directory (namely
+  \ ``$PWD``\ ).
+
+- Exporting the variable
+  \ ``$SYMRUSTC_LIBAFL_SOLVING_DIR``\  with a
+  specific path should not be used, unless one wants to change the
+  directory of the solving program. Note that we have already globally
+  exported this variable, e.g. see the beginning of the associated
+  \ ``Dockerfile``\ .
+
+- Exporting the variable
+  \ ``$SYMRUSTC_LIBAFL_SOLVING_OBJECTIVE``\  with
+  some value makes the fuzzing simulation behave as an infinite loop
+  until reaching a sufficient number of termination objective. While
+  this number of objective is statically encoded in
+  \ ``$SYMRUSTC_HOME_RS/libafl_solving_run.sh``\ , it
+  has to be a strictly positive number, smallest enough for the
+  simulation to ultimately stop by itself. The termination objective is
+  a specific “static” property-measure encoded in the solving program
+  (see e.g. the documentation of LibAFL). By default, the fuzzing
+  simulation is running for a short period of time before being
+  automatically interrupted, irrespective of its objectives having been
+  meanwhile fulfilled or not.
+
+  Note that the standard error is expected to reactive print an
+  informative message as soon as an objective is reached.
+
+builder_libafl_solving_example: Build concolic Rust examples for LibAFL solving (continuing from builder_libafl_solving_main)
+-----------------------------------------------------------------------------------------------------------------------------
+
+.. code:: Dockerfile
+  
+  ARG SYMRUSTC_CI
+  ARG SYMRUSTC_LIBAFL_EXAMPLE=$HOME/belcarra_source/examples/source_0_original_1c_rs
+  ARG SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_SOLVING
+  ARG SYMRUSTC_LIBAFL_SOLVING_OBJECTIVE=yes
+  
+  RUN if [[ -v SYMRUSTC_CI ]] ; then \
+        echo "Ignoring the execution" >&2; \
+      else \
+        cd $SYMRUSTC_LIBAFL_EXAMPLE \
+        && $SYMRUSTC_HOME_RS/libafl_solving_build.sh; \
+      fi
+  
+  RUN if [[ -v SYMRUSTC_CI ]] ; then \
+        echo "Ignoring the execution" >&2; \
+      else \
+        cd $SYMRUSTC_LIBAFL_EXAMPLE \
+        && $SYMRUSTC_HOME_RS/libafl_solving_run.sh test; \
+      fi
+
+Installation summary
+********************
+
+In summary, the following start script has been provided for building
+everything presented in the document:
+
+- \ `https://github.com/sfu-rsl/symrustc/blob/main/build_all.sh <https://github.com/sfu-rsl/symrustc/blob/main/build_all.sh>`_
+
+Note that, at the time of writing, this script is internally assuming
+that \ ``docker``\  is installed. In case it is not
+installed, others solutions exploring how to convert a
+\ ``Dockerfile``\  to a shell script may help
+instead:
+
+- \ `https://github.com/dyne/docker2sh <https://github.com/dyne/docker2sh>`_
+
+(We may also at some point provide a generated script.)
 
 Extended usage (with tests)
 ***************************
