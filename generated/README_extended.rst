@@ -17,40 +17,75 @@ repository.
 builder_addons: Build additional tools (continuing from builder_symrustc)
 -------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_CI
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_CI ]] ; then \
+    echo 'Note: SYMRUSTC_CI can be exported with a particular value' >&2; \
+  fi
   
-  COPY --chown=ubuntu:ubuntu src/rs/env0.sh $SYMRUSTC_HOME_RS/
-  COPY --chown=ubuntu:ubuntu src/rs/env.sh $SYMRUSTC_HOME_RS/
-  COPY --chown=ubuntu:ubuntu src/rs/parse_args0.sh $SYMRUSTC_HOME_RS/
-  COPY --chown=ubuntu:ubuntu src/rs/parse_args.sh $SYMRUSTC_HOME_RS/
-  COPY --chown=ubuntu:ubuntu src/rs/wait_all.sh $SYMRUSTC_HOME_RS/
   
-  RUN cd ~/symcc_source/util/symcc_fuzzing_helper \
-      && $SYMRUSTC_HOME_RS/env.sh $SYMRUSTC_CARGO install --path $PWD --locked
+  # (* COPY src/rs/env0.sh $SYMRUSTC_HOME_RS/ *)
+  ssh localhost 'mkdir -p "'"$SYMRUSTC_HOME_RS/"'"' && \
+  scp -pr "localhost:src/rs/env0.sh" "$SYMRUSTC_HOME_RS/"
+  
+  # (* COPY src/rs/env.sh $SYMRUSTC_HOME_RS/ *)
+  ssh localhost 'mkdir -p "'"$SYMRUSTC_HOME_RS/"'"' && \
+  scp -pr "localhost:src/rs/env.sh" "$SYMRUSTC_HOME_RS/"
+  
+  # (* COPY src/rs/parse_args0.sh $SYMRUSTC_HOME_RS/ *)
+  ssh localhost 'mkdir -p "'"$SYMRUSTC_HOME_RS/"'"' && \
+  scp -pr "localhost:src/rs/parse_args0.sh" "$SYMRUSTC_HOME_RS/"
+  
+  # (* COPY src/rs/parse_args.sh $SYMRUSTC_HOME_RS/ *)
+  ssh localhost 'mkdir -p "'"$SYMRUSTC_HOME_RS/"'"' && \
+  scp -pr "localhost:src/rs/parse_args.sh" "$SYMRUSTC_HOME_RS/"
+  
+  # (* COPY src/rs/wait_all.sh $SYMRUSTC_HOME_RS/ *)
+  ssh localhost 'mkdir -p "'"$SYMRUSTC_HOME_RS/"'"' && \
+  scp -pr "localhost:src/rs/wait_all.sh" "$SYMRUSTC_HOME_RS/"
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd ~/symcc_source/util/symcc_fuzzing_helper \
+  && $SYMRUSTC_HOME_RS/env.sh $SYMRUSTC_CARGO install --path $PWD --locked
 
 builder_extended_main: Build extended main (continuing from builder_symrustc_main)
 ----------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          build-essential \
-          libllvm$SYMRUSTC_LLVM_VERSION \
-          zlib1g \
-      && sudo apt-get clean
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  sudo apt-get update \
+  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      build-essential \
+      libllvm$SYMRUSTC_LLVM_VERSION \
+      zlib1g \
+  && sudo apt-get clean
   
-  RUN ln -s ~/symcc_source/util/pure_concolic_execution.sh symcc_build
-  COPY --chown=ubuntu:ubuntu --from=builder_afl $HOME/afl afl
-  COPY --chown=ubuntu:ubuntu --from=builder_addons $HOME/.cargo .cargo
   
-  ENV PATH=$HOME/symcc_build:$PATH
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  ln -s ~/symcc_source/util/pure_concolic_execution.sh symcc_build
   
-  ENV AFL_PATH=$HOME/afl
-  ENV AFL_CC=clang-$SYMRUSTC_LLVM_VERSION
-  ENV AFL_CXX=clang++-$SYMRUSTC_LLVM_VERSION
+  # (* COPY --from=builder_afl $HOME/afl afl *)
+  scp -pr "builder_afl:$HOME/afl" "afl"
+  
+  # (* COPY --from=builder_addons $HOME/.cargo .cargo *)
+  scp -pr "builder_addons:$HOME/.cargo" ".cargo"
+  
+  
+  # (* ENV *)
+  export PATH=$HOME/symcc_build:$PATH
+  
+  
+  # (* ENV *)
+  export AFL_PATH=$HOME/afl
+  
+  # (* ENV *)
+  export AFL_CC=clang-$SYMRUSTC_LLVM_VERSION
+  
+  # (* ENV *)
+  export AFL_CXX=clang++-$SYMRUSTC_LLVM_VERSION
 
 Testing SymCC on C++ programs
 =============================
@@ -61,49 +96,71 @@ expected on C++ programs.
 builder_examples_cpp_z3_libcxx_reg: Build concolic C++ examples - SymCC/Z3, libcxx regular (continuing from builder_symcc_simple)
 ---------------------------------------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
+  # (* COPY src/cpp belcarra_source/src/cpp *)
+  scp -pr "localhost:src/cpp" "belcarra_source/src/cpp"
   
-  RUN cd belcarra_source/examples \
-      && export SYMCC_REGULAR_LIBCXX=yes \
-      && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
+  # (* COPY examples belcarra_source/examples *)
+  scp -pr "localhost:examples" "belcarra_source/examples"
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd belcarra_source/examples \
+  && export SYMCC_REGULAR_LIBCXX=yes \
+  && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
 
 builder_examples_cpp_z3_libcxx_inst: Build concolic C++ examples - SymCC/Z3, libcxx instrumented (continuing from builder_symcc_libcxx)
 ---------------------------------------------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
+  # (* COPY src/cpp belcarra_source/src/cpp *)
+  scp -pr "localhost:src/cpp" "belcarra_source/src/cpp"
   
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
+  # (* COPY examples belcarra_source/examples *)
+  scp -pr "localhost:examples" "belcarra_source/examples"
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd belcarra_source/examples \
+  && $SYMRUSTC_HOME_CPP/main_fold_sym++_simple_z3.sh
 
 builder_examples_cpp_qsym: Build concolic C++ examples - SymCC/QSYM (continuing from builder_symcc_qsym)
 --------------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN mkdir /tmp/output
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  mkdir /tmp/output
   
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
   
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_CPP/main_fold_sym++_qsym.sh
+  # (* COPY src/cpp belcarra_source/src/cpp *)
+  scp -pr "localhost:src/cpp" "belcarra_source/src/cpp"
+  
+  # (* COPY examples belcarra_source/examples *)
+  scp -pr "localhost:examples" "belcarra_source/examples"
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd belcarra_source/examples \
+  && $SYMRUSTC_HOME_CPP/main_fold_sym++_qsym.sh
 
 builder_examples_cpp_clang: Build concolic C++ examples - Only clang (continuing from builder_source)
 -----------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  COPY --chown=ubuntu:ubuntu src/cpp belcarra_source/src/cpp
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
+  # (* COPY src/cpp belcarra_source/src/cpp *)
+  scp -pr "localhost:src/cpp" "belcarra_source/src/cpp"
   
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_CPP/main_fold_clang++.sh
+  # (* COPY examples belcarra_source/examples *)
+  scp -pr "localhost:examples" "belcarra_source/examples"
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd belcarra_source/examples \
+  && $SYMRUSTC_HOME_CPP/main_fold_clang++.sh
 
 Testing SymRustC on Rust programs
 =================================

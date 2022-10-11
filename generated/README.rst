@@ -189,9 +189,10 @@ version, e.g. for the case of SymCC in CMakeLists syntax
 
 - \ `https://github.com/sfu-rsl/symcc/blob/8d3442870e6d56acd2f6bca77028d93abe8df854/CMakeLists.txt#L65 <https://github.com/sfu-rsl/symcc/blob/8d3442870e6d56acd2f6bca77028d93abe8df854/CMakeLists.txt#L65>`_
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ENV SYMRUSTC_LLVM_VERSION=11
+  # (* ENV *)
+  export SYMRUSTC_LLVM_VERSION=11
 
 Unfortunately, the above version that we give to the OS package
 manager \ ``apt-get``\  is slightly different from
@@ -207,9 +208,10 @@ interest (and make sure that the correct variable is provided to the
 respective \ ``apt-get``\  or
 \ ``cmake``\  software):
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ENV SYMRUSTC_LLVM_VERSION_LONG=11.1
+  # (* ENV *)
+  export SYMRUSTC_LLVM_VERSION_LONG=11.1
 
 Note that if we write “11” for the version to install in CMakeLists,
 this will ultimately be understood by default as “11.0”:
@@ -224,39 +226,49 @@ in LLVM:
 The following packages to install were originally coming from the
 requirements of SymCC:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          clang-$SYMRUSTC_LLVM_VERSION \
-          cmake \
-          g++ \
-          git \
-          libz3-dev \
-          ninja-build \
-          python3-pip \
-      && sudo apt-get clean
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  sudo apt-get update \
+  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      clang-$SYMRUSTC_LLVM_VERSION \
+      cmake \
+      g++ \
+      git \
+      libz3-dev \
+      ninja-build \
+      python3-pip \
+  && sudo apt-get clean
 
 We can conveniently introduce the next shortcuts:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ENV SYMRUSTC_HOME=$HOME/belcarra_source
-  ENV SYMRUSTC_HOME_CPP=$SYMRUSTC_HOME/src/cpp
-  ENV SYMRUSTC_HOME_RS=$SYMRUSTC_HOME/src/rs
+  # (* ENV *)
+  export SYMRUSTC_HOME=$HOME/belcarra_source
+  
+  # (* ENV *)
+  export SYMRUSTC_HOME_CPP=$SYMRUSTC_HOME/src/cpp
+  
+  # (* ENV *)
+  export SYMRUSTC_HOME_RS=$SYMRUSTC_HOME/src/rs
 
 Even if SymCC is not yet installed, we can enable the exportation of
 this next variable so that it will be available in global scope for
 the rest of the document:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
+  # (* ENV *)
+  export SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ENV SYMRUSTC_LIBAFL_SOLVING_DIR=$HOME/libafl/fuzzers/libfuzzer_rust_concolic
-  ENV SYMRUSTC_LIBAFL_TRACING_DIR=$HOME/libafl/libafl_concolic/test
+  # (* ENV *)
+  export SYMRUSTC_LIBAFL_SOLVING_DIR=$HOME/libafl/fuzzers/libfuzzer_rust_concolic
+  
+  # (* ENV *)
+  export SYMRUSTC_LIBAFL_TRACING_DIR=$HOME/libafl/libafl_concolic/test
 
 The first SymRustC component to install is our custom Rust
 compiler. (Note that at the time of writing, our modifications mainly
@@ -275,51 +287,70 @@ server state).
 It is notably at this point where we explicitly specify the SymRustC
 version to use, and it has to be mandatorily provided:
 
-.. code:: Dockerfile
+.. code:: shell
   
   # Setup Rust compiler source
-  ARG SYMRUSTC_RUST_VERSION
-  ARG SYMRUSTC_BRANCH
-  RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
-        git clone --depth 1 -b $SYMRUSTC_RUST_VERSION https://github.com/sfu-rsl/rust.git rust_source; \
-      else \
-        git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
-        ln -s ~/belcarra_source0/src/rs/rust_source; \
-      fi
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_RUST_VERSION ]] ; then \
+    echo 'Note: SYMRUSTC_RUST_VERSION can be exported with a particular value' >&2; \
+  fi
+  
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_BRANCH ]] ; then \
+    echo 'Note: SYMRUSTC_BRANCH can be exported with a particular value' >&2; \
+  fi
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
+    git clone --depth 1 -b $SYMRUSTC_RUST_VERSION https://github.com/sfu-rsl/rust.git rust_source; \
+  else \
+    git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
+    ln -s ~/belcarra_source0/src/rs/rust_source; \
+  fi
+  
   
   # Init submodules
-  RUN [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0' ; \
-      git -C "$dir" submodule update --init --recursive
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0' ; \
+  git -C "$dir" submodule update --init --recursive
+  
   
   #
-  RUN ln -s ~/rust_source/src/llvm-project llvm_source
-  RUN git clone -b rust_runtime/11 https://github.com/sfu-rsl/LibAFL.git libafl
-  RUN ln -s ~/llvm_source/symcc symcc_source
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  ln -s ~/rust_source/src/llvm-project llvm_source
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  git clone -b rust_runtime/11 https://github.com/sfu-rsl/LibAFL.git libafl
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  ln -s ~/llvm_source/symcc symcc_source
 
 At the time of writing, the build of SymCC/Runtime is not yet
 integrated to be automatically made whenever SymRustC is built. So it
 has to be done manually, we first download the part corresponding to
 SymCC/Runtime source inside this new folder:
 
-.. code:: Dockerfile
+.. code:: shell
   
   # Note: Depending on the commit revision, the Rust compiler source may not have yet a SymCC directory. In this docker stage, we treat such case as a "non-aborting failure" (subsequent stages may raise different errors).
-  RUN if [ -d symcc_source ] ; then \
-        cd symcc_source \
-        && current=$(git log -1 --pretty=format:%H) \
-  # Note: Ideally, all submodules must also follow the change of version happening in the super-root project.
-        && git checkout origin/main/$(git branch -r --contains "$current" | cut -d '/' -f 3-) \
-        && cp -a . ~/symcc_source_main \
-        && git checkout "$current"; \
-      fi
+  # line 3-4 # Note: Ideally, all submodules must also follow the change of version happening in the super-root project.
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [ -d symcc_source ] ; then \
+    cd symcc_source \
+    && current=$(git log -1 --pretty=format:%H) \
+    && git checkout origin/main/$(git branch -r --contains "$current" | cut -d '/' -f 3-) \
+    && cp -a . ~/symcc_source_main \
+    && git checkout "$current"; \
+  fi
 
 The installation of AFL is optional for SymRustC, but one can already
 download its source at this stage:
 
-.. code:: Dockerfile
+.. code:: shell
   
   # Download AFL
-  RUN git clone --depth 1 -b v2.56b https://github.com/google/AFL.git afl
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  git clone --depth 1 -b v2.56b https://github.com/google/AFL.git afl
 
 Building SymCC/Runtime
 ======================
@@ -334,17 +365,22 @@ builder_depend: Set up project dependencies (continuing from builder_source)
 
 As prerequisite, the \ ``lit``\  binary has to be installed.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          llvm-$SYMRUSTC_LLVM_VERSION-dev \
-          llvm-$SYMRUSTC_LLVM_VERSION-tools \
-          python2 \
-          zlib1g-dev \
-      && sudo apt-get clean
-  RUN pip3 install lit
-  ENV PATH=$HOME/.local/bin:$PATH
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  sudo apt-get update \
+  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      llvm-$SYMRUSTC_LLVM_VERSION-dev \
+      llvm-$SYMRUSTC_LLVM_VERSION-tools \
+      python2 \
+      zlib1g-dev \
+  && sudo apt-get clean
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  pip3 install lit
+  
+  # (* ENV *)
+  export PATH=$HOME/.local/bin:$PATH
 
 builder_afl: Build AFL (continuing from builder_source)
 -------------------------------------------------------
@@ -352,26 +388,28 @@ builder_afl: Build AFL (continuing from builder_source)
 Since AFL is not used by the installation phase of SymRustC, this part
 can be skipped.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN cd afl \
-      && make
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd afl \
+  && make
 
 builder_symcc_simple: Build SymCC simple backend (continuing from builder_depend)
 ---------------------------------------------------------------------------------
 
 Note that we explicitly set the LLVM version to use.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN mkdir symcc_build_simple \
-      && cd symcc_build_simple \
-      && cmake -G Ninja ~/symcc_source_main \
-          -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION_LONG \
-          -DQSYM_BACKEND=OFF \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-          -DZ3_TRUST_SYSTEM_VERSION=on \
-      && ninja check
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  mkdir symcc_build_simple \
+  && cd symcc_build_simple \
+  && cmake -G Ninja ~/symcc_source_main \
+      -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION_LONG \
+      -DQSYM_BACKEND=OFF \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DZ3_TRUST_SYSTEM_VERSION=on \
+  && ninja check
 
 builder_symcc_libcxx: Build LLVM libcxx using SymCC simple backend (continuing from builder_symcc_simple)
 ---------------------------------------------------------------------------------------------------------
@@ -388,9 +426,10 @@ consequences whenever one is trying to take advantage of incremental
 compilation of LLVM, i.e. while trying to reuse the build here for
 building the LLVM part of SymRustC.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN export SYMCC_REGULAR_LIBCXX=yes SYMCC_NO_SYMBOLIC_INPUT=yes \
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+      export SYMCC_REGULAR_LIBCXX=yes SYMCC_NO_SYMBOLIC_INPUT=yes \
     && mkdir -p rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
     && cd rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
     && cmake -G Ninja ~/llvm_source/llvm \
@@ -409,16 +448,17 @@ builder_symcc_qsym: Build SymCC Qsym backend (continuing from builder_symcc_libc
 
 Note that we explicitly set the LLVM version to use.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN mkdir symcc_build \
-      && cd symcc_build \
-      && cmake -G Ninja ~/symcc_source_main \
-          -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION_LONG \
-          -DQSYM_BACKEND=ON \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-          -DZ3_TRUST_SYSTEM_VERSION=on \
-      && ninja check
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  mkdir symcc_build \
+  && cd symcc_build \
+  && cmake -G Ninja ~/symcc_source_main \
+      -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION_LONG \
+      -DQSYM_BACKEND=ON \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DZ3_TRUST_SYSTEM_VERSION=on \
+  && ninja check
 
 Building SymRustC
 =================
@@ -434,11 +474,15 @@ is dedicated to the build of LLVM, this separation permits the
 fine-grain monitoring of each separated component and compilation-time
 while drawing up benchmark statistics.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  COPY --chown=ubuntu:ubuntu src/llvm/cmake.sh $SYMRUSTC_HOME/src/llvm/
+  # (* COPY src/llvm/cmake.sh $SYMRUSTC_HOME/src/llvm/ *)
+  ssh localhost 'mkdir -p "'"$SYMRUSTC_HOME/src/llvm/"'"' && \
+  scp -pr "localhost:src/llvm/cmake.sh" "$SYMRUSTC_HOME/src/llvm/"
   
-  RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+      mkdir -p rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
     && cd -P rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
     && $SYMRUSTC_HOME/src/llvm/cmake.sh
 
@@ -447,20 +491,29 @@ builder_symrustc: Build SymRustC core (continuing from builder_source)
 
 This part focuses on the main build of SymRustC.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          curl \
-      && sudo apt-get clean
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  sudo apt-get update \
+  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      curl \
+  && sudo apt-get clean
+  
+  
   
   #
+  # (* COPY --from=builder_symcc_qsym $HOME/symcc_build_simple symcc_build_simple *)
+  scp -pr "builder_symcc_qsym:$HOME/symcc_build_simple" "symcc_build_simple"
   
-  COPY --chown=ubuntu:ubuntu --from=builder_symcc_qsym $HOME/symcc_build_simple symcc_build_simple
-  COPY --chown=ubuntu:ubuntu --from=builder_symcc_qsym $HOME/symcc_build symcc_build
+  # (* COPY --from=builder_symcc_qsym $HOME/symcc_build symcc_build *)
+  scp -pr "builder_symcc_qsym:$HOME/symcc_build" "symcc_build"
   
-  RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu
-  COPY --chown=ubuntu:ubuntu --from=builder_symllvm $HOME/rust_source/build/x86_64-unknown-linux-gnu/llvm rust_source/build/x86_64-unknown-linux-gnu/llvm
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  mkdir -p rust_source/build/x86_64-unknown-linux-gnu
+  
+  # (* COPY --from=builder_symllvm $HOME/rust_source/build/x86_64-unknown-linux-gnu/llvm rust_source/build/x86_64-unknown-linux-gnu/llvm *)
+  scp -pr "builder_symllvm:$HOME/rust_source/build/x86_64-unknown-linux-gnu/llvm" "rust_source/build/x86_64-unknown-linux-gnu/llvm"
 
 Disabling SSE2.
   At the time of writing, it seems that SymCC does not support certain
@@ -501,32 +554,54 @@ Composing with SymCC/Runtime.
   must be mandatorily provided (this should be a temporary measure until
   we improve the current duplicated build situation of SymCC/Runtime).
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ENV SYMRUSTC_RUNTIME_DIR=$HOME/symcc_build/SymRuntime-prefix/src/SymRuntime-build
+  # (* ENV *)
+  export SYMRUSTC_RUNTIME_DIR=$HOME/symcc_build/SymRuntime-prefix/src/SymRuntime-build
   
-  RUN export SYMCC_NO_SYMBOLIC_INPUT=yes \
-      && cd rust_source \
-      && sed -e 's/#ninja = false/ninja = true/' \
-          config.toml.example > config.toml \
-      && sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
-          src/librustc_span/analyze_source_file.rs \
-      && export SYMCC_RUNTIME_DIR=$SYMRUSTC_RUNTIME_DIR \
-      && /usr/bin/python3 ./x.py build --stage 2
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  export SYMCC_NO_SYMBOLIC_INPUT=yes \
+  && cd rust_source \
+  && sed -e 's/#ninja = false/ninja = true/' \
+      config.toml.example > config.toml \
+  && sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
+      src/librustc_span/analyze_source_file.rs \
+  && export SYMCC_RUNTIME_DIR=$SYMRUSTC_RUNTIME_DIR \
+  && /usr/bin/python3 ./x.py build --stage 2
 
 
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_RUST_BUILD=$HOME/rust_source/build/x86_64-unknown-linux-gnu
-  ARG SYMRUSTC_RUST_BUILD_STAGE=$SYMRUSTC_RUST_BUILD/stage2
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_RUST_BUILD ]] ; then \
+    export SYMRUSTC_RUST_BUILD=$HOME/rust_source/build/x86_64-unknown-linux-gnu; \
+    echo 'Warning: the scope of SYMRUSTC_RUST_BUILD has to be limited. To do so, one can later `unset SYMRUSTC_RUST_BUILD`' >&2; \
+  fi
   
-  ENV SYMRUSTC_CARGO=$SYMRUSTC_RUST_BUILD/stage0/bin/cargo
-  ENV SYMRUSTC_RUSTC=$SYMRUSTC_RUST_BUILD_STAGE/bin/rustc
-  ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD_STAGE/lib
-  ENV PATH=$HOME/.cargo/bin:$PATH
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_RUST_BUILD_STAGE ]] ; then \
+    export SYMRUSTC_RUST_BUILD_STAGE=$SYMRUSTC_RUST_BUILD/stage2; \
+    echo 'Warning: the scope of SYMRUSTC_RUST_BUILD_STAGE has to be limited. To do so, one can later `unset SYMRUSTC_RUST_BUILD_STAGE`' >&2; \
+  fi
   
-  COPY --chown=ubuntu:ubuntu --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH
+  
+  # (* ENV *)
+  export SYMRUSTC_CARGO=$SYMRUSTC_RUST_BUILD/stage0/bin/cargo
+  
+  # (* ENV *)
+  export SYMRUSTC_RUSTC=$SYMRUSTC_RUST_BUILD_STAGE/bin/rustc
+  
+  # (* ENV *)
+  export SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD_STAGE/lib
+  
+  # (* ENV *)
+  export PATH=$HOME/.cargo/bin:$PATH
+  
+  
+  # (* COPY --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH *)
+  scp -pr "builder_symcc_libcxx:$SYMCC_LIBCXX_PATH" "$SYMCC_LIBCXX_PATH"
 
 Certain Rust programs \ `P`\  embedding external language code (such as C
 or C++) may rely on external respective compiling tools (such as
@@ -541,21 +616,23 @@ versions of respective original compilers.
 For the case of \ ``clang``\  or
 \ ``clang++``\ , we can do so as follows:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN mkdir clang_symcc_on \
-      && ln -s ~/symcc_build/symcc clang_symcc_on/clang \
-      && ln -s ~/symcc_build/sym++ clang_symcc_on/clang++
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  mkdir clang_symcc_on \
+  && ln -s ~/symcc_build/symcc clang_symcc_on/clang \
+  && ln -s ~/symcc_build/sym++ clang_symcc_on/clang++
 
 Similarly, we provide the same disabling counterpart for a Rust
 project interested to explicitly disable the concolic run on its C or
 C++ implementation:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN mkdir clang_symcc_off \
-      && ln -s $(which clang-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang \
-      && ln -s $(which clang++-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang++
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  mkdir clang_symcc_off \
+  && ln -s $(which clang-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang \
+  && ln -s $(which clang++-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang++
 
 Finally, it suffices to modify \ ``$PATH``\  in
 such a way that SymRustC will call \ ``clang``
@@ -580,15 +657,20 @@ Applying SymRustC on a single example
 builder_symrustc_main: Build SymRustC main (continuing from builder_symrustc)
 -----------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-          bsdmainutils \
-      && sudo apt-get clean
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  sudo apt-get update \
+  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      bsdmainutils \
+  && sudo apt-get clean
   
-  COPY --chown=ubuntu:ubuntu src/rs belcarra_source/src/rs
-  COPY --chown=ubuntu:ubuntu examples belcarra_source/examples
+  
+  # (* COPY src/rs belcarra_source/src/rs *)
+  scp -pr "localhost:src/rs" "belcarra_source/src/rs"
+  
+  # (* COPY examples belcarra_source/examples *)
+  scp -pr "localhost:examples" "belcarra_source/examples"
 
 To coordinate the build and run of general Rust programs, one may
 naturally want to use \ ``cargo``\ . In a concolic
@@ -917,39 +999,55 @@ then one can set the next variable to an arbitrary value before
 proceeding further. Setting the variable will instruct our test to
 limit as most as possible any fork operations:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_CI
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_CI ]] ; then \
+    echo 'Note: SYMRUSTC_CI can be exported with a particular value' >&2; \
+  fi
 
 Certain concolic execution run done by SymRustC may fail: e.g.,
 whenever an instruction is not yet supported by SymCC. To avoid making
 the fail interrupting our tests, we can set the next variable to an
 arbitrary value:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_SKIP_FAIL
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_SKIP_FAIL ]] ; then \
+    echo 'Note: SYMRUSTC_SKIP_FAIL can be exported with a particular value' >&2; \
+  fi
 
 At this point, we are ready to start the concolic build of the
 examples.
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_VERBOSE
-  ARG SYMRUSTC_EXEC_CONCOLIC_OFF=yes
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_VERBOSE ]] ; then \
+    echo 'Note: SYMRUSTC_VERBOSE can be exported with a particular value' >&2; \
+  fi
+  
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_EXEC_CONCOLIC_OFF ]] ; then \
+    export SYMRUSTC_EXEC_CONCOLIC_OFF=yes; \
+    echo 'Warning: the scope of SYMRUSTC_EXEC_CONCOLIC_OFF has to be limited. To do so, one can later `unset SYMRUSTC_EXEC_CONCOLIC_OFF`' >&2; \
+  fi
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd belcarra_source/examples \
+  && $SYMRUSTC_HOME_RS/fold_symrustc_build.sh
 
 Ultimately, we can proceed to the concolic execution of each
 binary-result produced by the above SymRustC invocation:
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN cd belcarra_source/examples \
-      && $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd belcarra_source/examples \
+  && $SYMRUSTC_HOME_RS/fold_symrustc_run.sh
 
 SymRustC/LibAFL: Presentation
 *****************************
@@ -992,30 +1090,36 @@ compatible compiler version.
 builder_base_rust: Set up Ubuntu/Rust environment (continuing from builder_symrustc)
 ------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ENV RUSTUP_HOME=$HOME/rustup \
+  # (* ENV *)
+  export \
+      RUSTUP_HOME=$HOME/rustup \
       CARGO_HOME=$HOME/cargo \
       PATH=$HOME/cargo/bin:$PATH \
       RUST_VERSION=1.62.1
   
-  # https://github.com/rust-lang/docker-rust/blob/8a5c9907090efde7e259bc0c51f951b7383c62e6/1.62.1/bullseye/Dockerfile
-  RUN set -eux; \
-      dpkgArch="$(dpkg --print-architecture)"; \
-      case "${dpkgArch##*-}" in \
-          amd64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='3dc5ef50861ee18657f9db2eeb7392f9c2a6c95c90ab41e45ab4ca71476b4338' ;; \
-          armhf) rustArch='armv7-unknown-linux-gnueabihf'; rustupSha256='67777ac3bc17277102f2ed73fd5f14c51f4ca5963adadf7f174adf4ebc38747b' ;; \
-          arm64) rustArch='aarch64-unknown-linux-gnu'; rustupSha256='32a1532f7cef072a667bac53f1a5542c99666c4071af0c9549795bbdb2069ec1' ;; \
-          i386) rustArch='i686-unknown-linux-gnu'; rustupSha256='e50d1deb99048bc5782a0200aa33e4eea70747d49dffdc9d06812fd22a372515' ;; \
-          *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
-      esac; \
-      url="https://static.rust-lang.org/rustup/archive/1.24.3/${rustArch}/rustup-init"; \
-      curl -O "$url"; \
-      echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
-      chmod +x rustup-init; \
-      ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION --default-host ${rustArch}
   
-  RUN rustup component add rustfmt
+  # https://github.com/rust-lang/docker-rust/blob/8a5c9907090efde7e259bc0c51f951b7383c62e6/1.62.1/bullseye/Dockerfile
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  set -eux; \
+  dpkgArch="$(dpkg --print-architecture)"; \
+  case "${dpkgArch##*-}" in \
+      amd64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='3dc5ef50861ee18657f9db2eeb7392f9c2a6c95c90ab41e45ab4ca71476b4338' ;; \
+      armhf) rustArch='armv7-unknown-linux-gnueabihf'; rustupSha256='67777ac3bc17277102f2ed73fd5f14c51f4ca5963adadf7f174adf4ebc38747b' ;; \
+      arm64) rustArch='aarch64-unknown-linux-gnu'; rustupSha256='32a1532f7cef072a667bac53f1a5542c99666c4071af0c9549795bbdb2069ec1' ;; \
+      i386) rustArch='i686-unknown-linux-gnu'; rustupSha256='e50d1deb99048bc5782a0200aa33e4eea70747d49dffdc9d06812fd22a372515' ;; \
+      *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+  esac; \
+  url="https://static.rust-lang.org/rustup/archive/1.24.3/${rustArch}/rustup-init"; \
+  curl -O "$url"; \
+  echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
+  chmod +x rustup-init; \
+  ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION --default-host ${rustArch}
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  rustup component add rustfmt
 
 SymRustC/LibAFL: Tracing concolic binaries
 ******************************************
@@ -1026,31 +1130,41 @@ Installation
 builder_libafl_tracing: Build LibAFL tracing runtime (continuing from builder_base_rust)
 ----------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_CI
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_CI ]] ; then \
+    echo 'Note: SYMRUSTC_CI can be exported with a particular value' >&2; \
+  fi
   
-  RUN if [[ -v SYMRUSTC_CI ]] ; then \
-        mkdir ~/libafl/target; \
-      else \
-        cd $SYMRUSTC_LIBAFL_TRACING_DIR \
-        && cargo build -p runtime_test \
-        && cargo build -p dump_constraints; \
-      fi
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_CI ]] ; then \
+    mkdir ~/libafl/target; \
+  else \
+    cd $SYMRUSTC_LIBAFL_TRACING_DIR \
+    && cargo build -p runtime_test \
+    && cargo build -p dump_constraints; \
+  fi
 
 builder_libafl_tracing_main: Build LibAFL tracing runtime main (continuing from builder_symrustc_main)
 ------------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  COPY --chown=ubuntu:ubuntu --from=builder_libafl_tracing $HOME/libafl/target $HOME/libafl/target
+  # (* COPY --from=builder_libafl_tracing $HOME/libafl/target $HOME/libafl/target *)
+  scp -pr "builder_libafl_tracing:$HOME/libafl/target" "$HOME/libafl/target"
+  
   
   # Pointing to the Rust runtime back-end
-  RUN cd -P $SYMRUSTC_RUNTIME_DIR/.. \
-      && ln -s ~/libafl/target/debug "$(basename $SYMRUSTC_RUNTIME_DIR)0"
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd -P $SYMRUSTC_RUNTIME_DIR/.. \
+  && ln -s ~/libafl/target/debug "$(basename $SYMRUSTC_RUNTIME_DIR)0"
   
-  RUN source $SYMRUSTC_HOME_RS/libafl_swap.sh \
-      && swap
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  source $SYMRUSTC_HOME_RS/libafl_swap.sh \
+  && swap
 
 Usage
 =====
@@ -1141,27 +1255,43 @@ e.g. instead of using the default QSYM back-end.
 builder_libafl_tracing_example: Build concolic Rust examples for LibAFL tracing (continuing from builder_libafl_tracing_main)
 -----------------------------------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_CI
-  ARG SYMRUSTC_LIBAFL_EXAMPLE=$HOME/belcarra_source/examples/source_0_original_1c_rs
-  ARG SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_TRACING
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_CI ]] ; then \
+    echo 'Note: SYMRUSTC_CI can be exported with a particular value' >&2; \
+  fi
   
-  RUN if [[ -v SYMRUSTC_CI ]] ; then \
-        echo "Ignoring the execution" >&2; \
-      else \
-        cd $SYMRUSTC_LIBAFL_EXAMPLE \
-        && $SYMRUSTC_HOME_RS/libafl_tracing_build.sh; \
-      fi
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_LIBAFL_EXAMPLE ]] ; then \
+    export SYMRUSTC_LIBAFL_EXAMPLE=$HOME/belcarra_source/examples/source_0_original_1c_rs; \
+    echo 'Warning: the scope of SYMRUSTC_LIBAFL_EXAMPLE has to be limited. To do so, one can later `unset SYMRUSTC_LIBAFL_EXAMPLE`' >&2; \
+  fi
   
-  RUN if [[ -v SYMRUSTC_CI ]] ; then \
-        echo "Ignoring the execution" >&2; \
-      else \
-        cd $SYMRUSTC_LIBAFL_EXAMPLE \
-  # Note: target_cargo_off can be kept but its printed trace would be less informative than the one of target_cargo_on, and by default, only the first trace seems to be printed.
-        && rm -rf target_cargo_off \
-        && $SYMRUSTC_HOME_RS/libafl_tracing_run.sh test; \
-      fi
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_TRACING ]] ; then \
+    echo 'Note: SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_TRACING can be exported with a particular value' >&2; \
+  fi
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_CI ]] ; then \
+    echo "Ignoring the execution" >&2; \
+  else \
+    cd $SYMRUSTC_LIBAFL_EXAMPLE \
+    && $SYMRUSTC_HOME_RS/libafl_tracing_build.sh; \
+  fi
+  
+  
+  # line 4-5 # Note: target_cargo_off can be kept but its printed trace would be less informative than the one of target_cargo_on, and by default, only the first trace seems to be printed.
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_CI ]] ; then \
+    echo "Ignoring the execution" >&2; \
+  else \
+    cd $SYMRUSTC_LIBAFL_EXAMPLE \
+    && rm -rf target_cargo_off \
+    && $SYMRUSTC_HOME_RS/libafl_tracing_run.sh test; \
+  fi
 
 SymRustC/LibAFL: Solving concolic binaries
 ******************************************
@@ -1172,46 +1302,62 @@ Installation
 builder_libafl_solving: Build LibAFL solving runtime (continuing from builder_base_rust)
 ----------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_CI
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_CI ]] ; then \
+    echo 'Note: SYMRUSTC_CI can be exported with a particular value' >&2; \
+  fi
   
-  RUN if [[ -v SYMRUSTC_CI ]] ; then \
-        echo "Ignoring the execution" >&2; \
-      else \
-        cargo install cargo-make; \
-      fi
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_CI ]] ; then \
+    echo "Ignoring the execution" >&2; \
+  else \
+    cargo install cargo-make; \
+  fi
+  
   
   # Building the client-server main fuzzing loop
-  RUN if [[ -v SYMRUSTC_CI ]] ; then \
-        mkdir $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target; \
-        echo "Ignoring the execution" >&2; \
-      else \
-        cd $SYMRUSTC_LIBAFL_SOLVING_DIR \
-        && PATH=~/clang_symcc_off:"$PATH" cargo make test; \
-      fi
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_CI ]] ; then \
+    mkdir $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target; \
+    echo "Ignoring the execution" >&2; \
+  else \
+    cd $SYMRUSTC_LIBAFL_SOLVING_DIR \
+    && PATH=~/clang_symcc_off:"$PATH" cargo make test; \
+  fi
 
 builder_libafl_solving_main: Build LibAFL solving runtime main (continuing from builder_symrustc_main)
 ------------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  RUN sudo apt-get update \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  # Installing "nc" to later check if a given port is opened or closed
-          netcat-openbsd \
-          psmisc \
-      && sudo apt-get clean
+  # line 2-3 # Installing "nc" to later check if a given port is opened or closed
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  sudo apt-get update \
+  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      netcat-openbsd \
+      psmisc \
+  && sudo apt-get clean
   
-  COPY --chown=ubuntu:ubuntu --from=builder_libafl_solving $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target
-  COPY --chown=ubuntu:ubuntu --from=builder_libafl_solving $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target
+  
+  # (* COPY --from=builder_libafl_solving $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target *)
+  scp -pr "builder_libafl_solving:$SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target" "$SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target"
+  
+  # (* COPY --from=builder_libafl_solving $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target *)
+  scp -pr "builder_libafl_solving:$SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target" "$SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target"
+  
   
   # Pointing to the Rust runtime back-end
-  RUN cd -P $SYMRUSTC_RUNTIME_DIR/.. \
-      && ln -s $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target/release "$(basename $SYMRUSTC_RUNTIME_DIR)0"
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  cd -P $SYMRUSTC_RUNTIME_DIR/.. \
+  && ln -s $SYMRUSTC_LIBAFL_SOLVING_DIR/runtime/target/release "$(basename $SYMRUSTC_RUNTIME_DIR)0"
+  
   
   # TODO: file name to be generalized
-  RUN ln -s $SYMRUSTC_HOME_RS/libafl_solving_bin.sh $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target_symcc0.out
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  ln -s $SYMRUSTC_HOME_RS/libafl_solving_bin.sh $SYMRUSTC_LIBAFL_SOLVING_DIR/fuzzer/target_symcc0.out
 
 Usage
 =====
@@ -1313,26 +1459,47 @@ encountered.
 builder_libafl_solving_example: Build concolic Rust examples for LibAFL solving (continuing from builder_libafl_solving_main)
 -----------------------------------------------------------------------------------------------------------------------------
 
-.. code:: Dockerfile
+.. code:: shell
   
-  ARG SYMRUSTC_CI
-  ARG SYMRUSTC_LIBAFL_EXAMPLE=$HOME/belcarra_source/examples/source_0_original_1c_rs
-  ARG SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_SOLVING
-  ARG SYMRUSTC_LIBAFL_SOLVING_OBJECTIVE=yes
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_CI ]] ; then \
+    echo 'Note: SYMRUSTC_CI can be exported with a particular value' >&2; \
+  fi
   
-  RUN if [[ -v SYMRUSTC_CI ]] ; then \
-        echo "Ignoring the execution" >&2; \
-      else \
-        cd $SYMRUSTC_LIBAFL_EXAMPLE \
-        && $SYMRUSTC_HOME_RS/libafl_solving_build.sh; \
-      fi
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_LIBAFL_EXAMPLE ]] ; then \
+    export SYMRUSTC_LIBAFL_EXAMPLE=$HOME/belcarra_source/examples/source_0_original_1c_rs; \
+    echo 'Warning: the scope of SYMRUSTC_LIBAFL_EXAMPLE has to be limited. To do so, one can later `unset SYMRUSTC_LIBAFL_EXAMPLE`' >&2; \
+  fi
   
-  RUN if [[ -v SYMRUSTC_CI ]] ; then \
-        echo "Ignoring the execution" >&2; \
-      else \
-        cd $SYMRUSTC_LIBAFL_EXAMPLE \
-        && $SYMRUSTC_HOME_RS/libafl_solving_run.sh test; \
-      fi
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_SOLVING ]] ; then \
+    echo 'Note: SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_SOLVING can be exported with a particular value' >&2; \
+  fi
+  
+  # (* ARG *)
+  if [[ ! -v SYMRUSTC_LIBAFL_SOLVING_OBJECTIVE ]] ; then \
+    export SYMRUSTC_LIBAFL_SOLVING_OBJECTIVE=yes; \
+    echo 'Warning: the scope of SYMRUSTC_LIBAFL_SOLVING_OBJECTIVE has to be limited. To do so, one can later `unset SYMRUSTC_LIBAFL_SOLVING_OBJECTIVE`' >&2; \
+  fi
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_CI ]] ; then \
+    echo "Ignoring the execution" >&2; \
+  else \
+    cd $SYMRUSTC_LIBAFL_EXAMPLE \
+    && $SYMRUSTC_HOME_RS/libafl_solving_build.sh; \
+  fi
+  
+  
+  # (* RUN in a fresh session, e.g. inside `bash -c` *)
+  if [[ -v SYMRUSTC_CI ]] ; then \
+    echo "Ignoring the execution" >&2; \
+  else \
+    cd $SYMRUSTC_LIBAFL_EXAMPLE \
+    && $SYMRUSTC_HOME_RS/libafl_solving_run.sh test; \
+  fi
 
 Installation summary
 ********************
