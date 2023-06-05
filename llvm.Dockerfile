@@ -24,8 +24,6 @@ RUN git -C llvm-project submodule update --init --recursive
 
 FROM source as builder
 
-ARG INSTALL_PREFIX=/home/dist
-
 RUN jobs=$(python3 -c 'import os; print(len(os.sched_getaffinity(0)))') \
     && mkdir build \
     && cd build \
@@ -59,7 +57,7 @@ RUN jobs=$(python3 -c 'import os; print(len(os.sched_getaffinity(0)))') \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-Bsymbolic -static-libstdc++" \
     -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-Bsymbolic -static-libstdc++" \
     -DCMAKE_EXE_LINKER_FLAGS="-Wl,-Bsymbolic -static-libstdc++" \
-    -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
+    -DCMAKE_INSTALL_PREFIX=/home/dist \
     -DCMAKE_ASM_FLAGS="-ffunction-sections -fdata-sections -fPIC -m64" \
     -DCMAKE_BUILD_TYPE=Release \
     && cmake --build . --target install --config Release -- -j $jobs
@@ -68,4 +66,7 @@ FROM ubuntu:22.10 AS dist
 
 ARG INSTALL_PREFIX=/home/dist
 
-COPY --from=builder $INSTALL_PREFIX $INSTALL_PREFIX
+COPY --from=builder /home/dist $INSTALL_PREFIX
+COPY --from=builder /home/llvm-project/symcc/compiler/SymbolicCompilerPass.h $INSTALL_PREFIX/include/llvm/Transforms/Utils
+COPY --from=builder /home/llvm-project/symcc/compiler/SymbolicCompilerRuntime.h $INSTALL_PREFIX/include/llvm/Transforms/Utils
+COPY --from=builder /home/llvm-project/symcc/compiler/SymbolicCompilerSymbolizer.h $INSTALL_PREFIX/include/llvm/Transforms/Utils
