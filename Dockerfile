@@ -19,6 +19,8 @@
 
 # #
 
+ARG DISTS_TAG
+
 #
 # Set up Ubuntu environment
 #
@@ -77,122 +79,15 @@ RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
 
 # Init submodules
 RUN [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0' ; \
-    git -C "$dir" submodule update --init --recursive
+    pushd "$dir" \
+    # Let's exclude llvm-project from clone as we will use the distribution image.
+    && git -c submodule."src/rs/rust_source".update=none submodule update --init --recursive \
+    && git submodule update --init "src/rs/rust_source" \
+    && git -C ./src/rs/rust_source -c submodule."src/llvm-project".update=none submodule update --init --recursive \
+    && popd
 
-#
-RUN ln -s ~/rust_source/src/llvm-project llvm_source
-RUN git clone -b rust_runtime_verbose/20221214 https://github.com/sfu-rsl/LibAFL.git libafl
-RUN ln -s ~/llvm_source/symcc symcc_source
-
-# Note: Depending on the commit revision, the Rust compiler source may not have yet a SymCC directory. In this docker stage, we treat such case as a "non-aborting failure" (subsequent stages may raise different errors).
-RUN if [ -d symcc_source ] ; then \
-      cd symcc_source \
-      && current=$(git log -1 --pretty=format:%H) \
-# Note: Ideally, all submodules must also follow the change of version happening in the super-root project.
-      && git checkout origin/main/$(git branch -r --contains "$current" | cut -d '/' -f 3-) \
-      && cp -a . ~/symcc_source_main \
-      && git checkout "$current"; \
-    fi
-
-# Download AFL
-RUN git clone --depth 1 -b v2.56b https://github.com/google/AFL.git afl
-
-# Download Z3
-RUN git clone --depth 1 -b z3-4.11.2 https://github.com/Z3Prover/z3.git
-
-
-#
-# Set up project dependencies
-#
-FROM builder_source AS builder_depend
-
-RUN sudo apt-get update \
-    && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        llvm-$SYMRUSTC_LLVM_VERSION-dev \
-        llvm-$SYMRUSTC_LLVM_VERSION-tools \
-        python2 \
-        zlib1g-dev \
-    && sudo apt-get clean
-RUN pip3 install lit
-ENV PATH=$HOME/.local/bin:$PATH
-
-# https://github.com/season-lab/SymFusion/blob/main/docker/Dockerfile
-RUN mkdir z3_build \
-    && cd z3_build \
-    && cmake ~/z3 \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=`pwd`/dist \
-    && make -j `nproc` \
-    && make install
-
-
-#
-# Build AFL
-#
-FROM builder_source AS builder_afl
-
-RUN cd afl \
-    && make
-
-
-#
-# Build SymCC simple backend
-#
-FROM builder_depend AS builder_symcc_simple
-RUN mkdir symcc_build_simple \
-    && cd symcc_build_simple \
-    && cmake -G Ninja ~/symcc_source_main \
-        -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION \
-        -DQSYM_BACKEND=OFF \
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-        -DZ3_DIR=~/z3_build/dist/lib/cmake/z3 \
-    && ninja check
-
-
-#
-# Build LLVM libcxx using SymCC simple backend
-#
-FROM builder_symcc_simple AS builder_symcc_libcxx
-RUN export SYMCC_REGULAR_LIBCXX=yes SYMCC_NO_SYMBOLIC_INPUT=yes \
-  && mkdir -p rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
-  && cd rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
-  && cmake -G Ninja ~/llvm_source/llvm \
-  -DLLVM_ENABLE_PROJECTS="libcxx;libcxxabi" \
-  -DLLVM_TARGETS_TO_BUILD="X86" \
-  -DLLVM_DISTRIBUTION_COMPONENTS="cxx;cxxabi;cxx-headers" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=$SYMCC_LIBCXX_PATH \
-  -DCMAKE_C_COMPILER=$HOME/symcc_build_simple/symcc \
-  -DCMAKE_CXX_COMPILER=$HOME/symcc_build_simple/sym++ \
-  && ninja distribution \
-  && ninja install-distribution
-
-
-#
-# Build SymCC Qsym backend
-#
-FROM builder_symcc_libcxx AS builder_symcc_qsym
-RUN mkdir symcc_build \
-    && cd symcc_build \
-    && cmake -G Ninja ~/symcc_source_main \
-        -DLLVM_VERSION_FORCE=$SYMRUSTC_LLVM_VERSION \
-        -DQSYM_BACKEND=ON \
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-        -DZ3_DIR=~/z3_build/dist/lib/cmake/z3 \
-    && ninja check
-
-
-#
-# Build SymLLVM
-#
-FROM builder_source AS builder_symllvm
-
-COPY --chown=ubuntu:ubuntu src/llvm/cmake.sh $SYMRUSTC_HOME/src/llvm/
-
-RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
-  && cd -P rust_source/build/x86_64-unknown-linux-gnu/llvm/build \
-  && $SYMRUSTC_HOME/src/llvm/cmake.sh
-
+FROM ghcr.io/sfu-rsl/llvm_dist:$DISTS_TAG AS llvm_dist
+FROM ghcr.io/sfu-rsl/symcc_dist:$DISTS_TAG AS symcc_dist
 
 #
 # Build SymRustC core
@@ -206,9 +101,12 @@ RUN sudo apt-get update \
 
 #
 
-COPY --chown=ubuntu:ubuntu --from=builder_symcc_qsym $HOME/symcc_build_simple symcc_build_simple
-COPY --chown=ubuntu:ubuntu --from=builder_symcc_qsym $HOME/symcc_build symcc_build
-COPY --chown=ubuntu:ubuntu --from=builder_symcc_qsym $HOME/z3_build z3_build
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_qsym symcc_build
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build z3_build
+ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
+
+RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu
+COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist rust_source/build/x86_64-unknown-linux-gnu/llvm
 
 RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu
 COPY --chown=ubuntu:ubuntu --from=builder_symllvm $HOME/rust_source/build/x86_64-unknown-linux-gnu/llvm rust_source/build/x86_64-unknown-linux-gnu/llvm
@@ -235,7 +133,9 @@ ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD_STAGE/lib
 ENV SYMRUSTC_LIBAFL_EXAMPLE0=$HOME/belcarra_source/examples/source_0_original_1c8_rs
 ENV PATH=$HOME/.cargo/bin:$PATH
 
-COPY --chown=ubuntu:ubuntu --from=builder_symcc_libcxx $SYMCC_LIBCXX_PATH $SYMCC_LIBCXX_PATH
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_libcxx $SYMCC_LIBCXX_PATH
+
+ENV SYMCC_PASS_DIR=$HOME/symcc_build
 
 RUN mkdir clang_symcc_on \
     && ln -s ~/symcc_build/symcc clang_symcc_on/clang \
