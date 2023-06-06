@@ -18,17 +18,17 @@ ENV HOME=/home
 
 FROM base as source
 
+ARG LLVM_BRANCH
 ARG BRANCH
 
-RUN git clone --depth 1 -b $BRANCH https://github.com/sfu-rsl/llvm-project.git
+RUN git clone --depth 1 -b $LLVM_BRANCH https://github.com/sfu-rsl/llvm-project.git
 RUN git -C llvm-project submodule update --init --recursive
 
 RUN ln -s llvm-project/symcc symcc
 
 RUN cd symcc \
     && current=$(git log -1 --pretty=format:%H) \
-    # Note: Ideally, all submodules must also follow the change of version happening in the super-root project.
-    && git checkout origin/main/$(git branch -r --contains "$current" | cut -d '/' -f 3-) \
+    && git checkout origin/$BRANCH \
     && cp -a . /home/symcc_main \
     && git checkout "$current" \
     && cd /home
@@ -75,6 +75,17 @@ RUN mkdir build_qsym \
     && ninja check \
     && cd /home
 
+RUN mkdir build_noop \
+    && cd build_noop \
+    && cmake -G Ninja ~/symcc_main \
+        -DLLVM_VERSION_FORCE=$LLVM_VERSION \
+        -DQSYM_BACKEND=OFF \
+        -DNOOP_BACKEND=ON \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DZ3_DIR=$Z3_DIR \
+    && ninja \
+    && cd /home
+
 #
 # Build LLVM libcxx using SymCC simple backend
 #
@@ -100,10 +111,12 @@ WORKDIR /home
 
 ARG SIMPLE_INSTALL_PREFIX=/home/dist_simple
 ARG QSYM_INSTALL_PREFIX=/home/dist_qsym
+ARG NOOP_INSTALL_PREFIX=/home/dist_noop
 ARG LIBCXX_INSTALL_PREFIX=/home/dist_libcxx
 
 COPY --from=builder /home/build_simple $SIMPLE_INSTALL_PREFIX
 COPY --from=builder /home/build_qsym $QSYM_INSTALL_PREFIX
+COPY --from=builder /home/build_noop $NOOP_INSTALL_PREFIX
 COPY --from=builder /home/symcc_main/util/pure_concolic_execution.sh /
 COPY --from=builder_libcxx /home/libcxx_install $LIBCXX_INSTALL_PREFIX
 COPY --from=builder /home/z3_build/dist z3_build/dist
