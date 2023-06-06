@@ -40,12 +40,7 @@ USER ubuntu
 ENV HOME=/home/ubuntu
 WORKDIR $HOME
 
-
-#
-# Set up project source
-#
-FROM builder_base AS builder_source
-
+FROM builder_base AS builder_reqs
 ENV SYMRUSTC_LLVM_VERSION=15
 
 RUN sudo apt-get update \
@@ -59,6 +54,11 @@ RUN sudo apt-get update \
         ninja-build \
         python3-pip \
     && sudo apt-get clean
+
+#
+# Set up project source
+#
+FROM builder_reqs AS builder_source
 
 ENV SYMRUSTC_HOME=$HOME/belcarra_source
 ENV SYMRUSTC_HOME_CPP=$SYMRUSTC_HOME/src/cpp
@@ -110,15 +110,14 @@ ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
 
 ENV SYMRUSTC_LLVM_DIST_PATH=$HOME/llvm_dist
 COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist $SYMRUSTC_LLVM_DIST_PATH
-COPY --chown=ubuntu:ubuntu src/rs/config.toml rust_source
-RUN sed -i -e "s;\$SYMRUSTC_LLVM_DIST_PATH;$SYMRUSTC_LLVM_DIST_PATH;" \
-        rust_source/config.toml
+
 #
 
 ENV SYMRUSTC_RUNTIME_DIR=$HOME/symcc_build/SymRuntime-prefix/src/SymRuntime-build
 
 RUN export SYMCC_NO_SYMBOLIC_INPUT=yes \
     && cd rust_source \
+    && ./configure --llvm-config=$SYMRUSTC_LLVM_DIST_PATH/bin/llvm-config \
     && sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
         compiler/rustc_span/src/analyze_source_file.rs \
     && export SYMCC_RUNTIME_DIR=$SYMRUSTC_RUNTIME_DIR \
@@ -126,23 +125,39 @@ RUN export SYMCC_NO_SYMBOLIC_INPUT=yes \
 
 #
 
+FROM builder_reqs AS builder_symrustc_dist
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_qsym symcc_qsym
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_noop symcc_noop
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_libcxx $SYMCC_LIBCXX_PATH
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build z3_build
+ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
+
+ENV SYMRUSTC_LLVM_DIST_PATH=$HOME/llvm_dist
+COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist $SYMRUSTC_LLVM_DIST_PATH
+
 ARG SYMRUSTC_RUST_BUILD=$HOME/rust_source/build/x86_64-unknown-linux-gnu
 ARG SYMRUSTC_RUST_BUILD_STAGE=$SYMRUSTC_RUST_BUILD/stage2
 
 ENV SYMRUSTC_CARGO=$SYMRUSTC_RUST_BUILD/stage0/bin/cargo
 ENV SYMRUSTC_RUSTC=$SYMRUSTC_RUST_BUILD_STAGE/bin/rustc
 ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_RUST_BUILD_STAGE/lib
-ENV SYMRUSTC_LIBAFL_EXAMPLE0=$HOME/belcarra_source/examples/source_0_original_1c8_rs
 ENV PATH=$HOME/.cargo/bin:$PATH
 
-COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_libcxx $SYMCC_LIBCXX_PATH
-
 ENV SYMCC_PASS_DIR=$HOME/symcc_build
+RUN ln -s ~/symcc_qsym $SYMCC_PASS_DIR
+ENV SYMRUSTC_RUNTIME_DIR=$SYMCC_PASS_DIR/SymRuntime-prefix/src/SymRuntime-build
 
 RUN mkdir clang_symcc_on \
-    && ln -s ~/symcc_build/symcc clang_symcc_on/clang \
-    && ln -s ~/symcc_build/sym++ clang_symcc_on/clang++
+    && ln -s $SYMCC_PASS_DIR/symcc clang_symcc_on/clang \
+    && ln -s $SYMCC_PASS_DIR/sym++ clang_symcc_on/clang++
 
 RUN mkdir clang_symcc_off \
     && ln -s $(which clang-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang \
     && ln -s $(which clang++-$SYMRUSTC_LLVM_VERSION) clang_symcc_off/clang++
+
+COPY --chown=ubuntu:ubuntu --from=builder_symrustc $SYMRUSTC_RUST_BUILD_STAGE $SYMRUSTC_RUST_BUILD_STAGE
+
+ENV SYMRUSTC_HOME=$HOME/belcarra_source
+ENV SYMRUSTC_HOME_CPP=$SYMRUSTC_HOME/src/cpp
+ENV SYMRUSTC_HOME_RS=$SYMRUSTC_HOME/src/rs
+COPY --chown=ubuntu:ubuntu src/rs $SYMRUSTC_HOME_RS
