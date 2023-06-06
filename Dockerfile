@@ -73,9 +73,12 @@ ARG SYMRUSTC_BRANCH
 RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
       git clone --depth 1 -b $SYMRUSTC_RUST_VERSION https://github.com/sfu-rsl/rust.git rust_source; \
     else \
-      git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc.git belcarra_source0; \
+      set -e; \
+      git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc_toolchain2.git belcarra_source0; \
       ln -s ~/belcarra_source0/src/rs/rust_source; \
     fi
+
+RUN pwd && ls -la
 
 # Init submodules
 RUN [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0' ; \
@@ -101,13 +104,15 @@ RUN sudo apt-get update \
 
 #
 
-COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_qsym symcc_build
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_noop symcc_build
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build z3_build
 ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
 
-RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu
-COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist rust_source/build/x86_64-unknown-linux-gnu/llvm
-
+ENV SYMRUSTC_LLVM_DIST_PATH=$HOME/llvm_dist
+COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist $SYMRUSTC_LLVM_DIST_PATH
+COPY --chown=ubuntu:ubuntu src/rs/config.toml rust_source
+RUN sed -i -e "s;\$SYMRUSTC_LLVM_DIST_PATH;$SYMRUSTC_LLVM_DIST_PATH;" \
+        rust_source/config.toml
 #
 
 ENV SYMRUSTC_RUNTIME_DIR=$HOME/symcc_build/SymRuntime-prefix/src/SymRuntime-build
