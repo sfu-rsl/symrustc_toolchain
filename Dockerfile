@@ -108,9 +108,6 @@ ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
 RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu
 COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist rust_source/build/x86_64-unknown-linux-gnu/llvm
 
-RUN mkdir -p rust_source/build/x86_64-unknown-linux-gnu
-COPY --chown=ubuntu:ubuntu --from=builder_symllvm $HOME/rust_source/build/x86_64-unknown-linux-gnu/llvm rust_source/build/x86_64-unknown-linux-gnu/llvm
-
 #
 
 ENV SYMRUSTC_RUNTIME_DIR=$HOME/symcc_build/SymRuntime-prefix/src/SymRuntime-build
