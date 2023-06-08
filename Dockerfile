@@ -40,27 +40,28 @@ USER ubuntu
 ENV HOME=/home/ubuntu
 WORKDIR $HOME
 
-FROM builder_base AS builder_reqs
-ENV SYMRUSTC_LLVM_VERSION=15
+##################################################
 
-RUN sudo apt-get update \
-    && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        clang-tools-$SYMRUSTC_LLVM_VERSION \
-        mlir-$SYMRUSTC_LLVM_VERSION-tools \
-        libmlir-$SYMRUSTC_LLVM_VERSION-dev \
-        cmake \
-        g++ \
+FROM ghcr.io/sfu-rsl/llvm_dist:$DISTS_TAG AS llvm_dist
+FROM ghcr.io/sfu-rsl/symcc_dist:$DISTS_TAG AS symcc_dist
+
+##################################################
+
+FROM builder_base AS builder_commons
+
+RUN sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
         git \
-        ninja-build \
-        python3-pip \
+        g++ \
     && sudo apt-get clean
+
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build/dist/lib /usr/local/lib
+
+##################################################
 
 #
 # Set up project source
 #
-FROM builder_reqs AS builder_source
-
-ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
+FROM builder_commons AS builder_source
 
 # Setup Rust compiler source
 ARG SYMRUSTC_RUST_VERSION
@@ -84,28 +85,30 @@ RUN [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0
     && git -C ./src/rs/rust_source -c submodule."src/llvm-project".update=none submodule update --init --recursive \
     && popd
 
-FROM ghcr.io/sfu-rsl/llvm_dist:$DISTS_TAG AS llvm_dist
-FROM ghcr.io/sfu-rsl/symcc_dist:$DISTS_TAG AS symcc_dist
+##################################################
 
 #
 # Build SymRustC core
 #
 FROM builder_source AS builder_symrustc
 
+ARG SYMRUSTC_LLVM_VERSION=15
+
 RUN sudo apt-get update \
     && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        clang-tools-$SYMRUSTC_LLVM_VERSION \
+        mlir-$SYMRUSTC_LLVM_VERSION-tools \
+        libmlir-$SYMRUSTC_LLVM_VERSION-dev \
+        cmake \
+        ninja-build \
+        python3-pip \
         curl \
     && sudo apt-get clean
 
-#
-
-COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build z3_build
-ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
 
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_noop symcc_noop
 RUN sudo ln -s $HOME/symcc_noop/SymRuntime-prefix/src/SymRuntime-build/libSymRuntime.so /usr/lib/libSymRuntime.so
 
-#
 WORKDIR $HOME/rust_source
 
 ARG SYMRUSTC_LLVM_DIST_PATH=$HOME/llvm_dist
@@ -140,18 +143,11 @@ RUN sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
 RUN cp -r build/x86_64-unknown-linux-gnu/stage2 $BUILD_ARTIFACTS_PATH/stage2_normal
 RUN mkdir -p $BUILD_ARTIFACTS_PATH/stage0 && cp -r build/x86_64-unknown-linux-gnu/stage0/bin $BUILD_ARTIFACTS_PATH/stage0/bin
 
-#
+##################################################
 
-FROM builder_base AS builder_symrustc_dist
-
-RUN sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        g++ \
-    && sudo apt-get clean
+FROM builder_commons AS builder_symrustc_dist
 
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_qsym symcc_qsym
-COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_libcxx $SYMCC_LIBCXX_PATH
-COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build z3_build
-ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
 
 ARG SYMRUSTC_DIST=$HOME/symrustc_dist
 ARG SYMRUSTC_DIST_NORMAL=$SYMRUSTC_DIST/normal
@@ -176,7 +172,8 @@ ENV SYMRUSTC_SYMSTD=$SYMRUSTC_DIST_SYMSTD
 ARG SYMCC_BUILD_DIR=$HOME/symcc_qsym
 ENV SYMRUSTC_RUNTIME_DIR=$SYMCC_BUILD_DIR/SymRuntime-prefix/src/SymRuntime-build
 
-ENV SYMRUSTC_HOME=$HOME/belcarra_source
-ENV SYMRUSTC_HOME_RS=$SYMRUSTC_HOME/src/rs
-COPY --chown=ubuntu:ubuntu src/rs $SYMRUSTC_HOME_RS
-COPY --chown=ubuntu:ubuntu examples $SYMRUSTC_HOME/examples
+COPY --chown=ubuntu:ubuntu examples $HOME/examples
+
+COPY --chown=ubuntu:ubuntu src/rs/symrustc.sh $SYMRUSTC_DIST_NORMAL/bin/symrustc
+COPY --chown=ubuntu:ubuntu src/rs/symcargo.sh $SYMRUSTC_DIST_NORMAL/bin/symcargo
+ENV PATH=$SYMRUSTC_DIST_NORMAL/bin:$PATH
