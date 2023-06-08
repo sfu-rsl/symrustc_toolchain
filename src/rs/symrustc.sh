@@ -13,9 +13,6 @@ if [[ ! -v SYMRUSTC_SYMSTD ]]; then
     exit 1
 fi
 
-SYMCC_INPUT_FILE=$SYMRUSTC_INPUT_FILE \
-SYMCC_NO_SYMBOLIC_INPUT=$SYMRUSTC_NO_SYMBOLIC_INPUT \
-SYMCC_OUTPUT_DIR=$SYMRUSTC_OUTPUT_DIR \
 exec $SYMRUSTC_RUSTC \
   --sysroot="$SYMRUSTC_SYMSTD" \
   -Cpasses="symcc-module symcc-function" \

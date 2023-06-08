@@ -185,8 +185,8 @@ RUN ln -s $SYMRUSTC_SYMSTD/bin/cargo $HOME/.cargo/bin/symcargo
 
 ARG SYMCC_BUILD_DIR=$HOME/symcc_qsym
 ENV SYMRUSTC_RUNTIME_DIR=$SYMCC_BUILD_DIR/SymRuntime-prefix/src/SymRuntime-build
-ENV SYMRUSTC_OUTPUT_DIR=/tmp/output
+ENV SYMCC_OUTPUT_DIR=/tmp/output
 
-RUN mkdir -p $SYMRUSTC_OUTPUT_DIR
+RUN mkdir -p $SYMCC_OUTPUT_DIR
 
 COPY --chown=ubuntu:ubuntu examples $HOME/examples
