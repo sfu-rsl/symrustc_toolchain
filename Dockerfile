@@ -60,12 +60,7 @@ RUN sudo apt-get update \
 #
 FROM builder_reqs AS builder_source
 
-ENV SYMRUSTC_HOME=$HOME/belcarra_source
-ENV SYMRUSTC_HOME_CPP=$SYMRUSTC_HOME/src/cpp
-ENV SYMRUSTC_HOME_RS=$SYMRUSTC_HOME/src/rs
 ENV SYMCC_LIBCXX_PATH=$HOME/libcxx_symcc_install
-ENV SYMRUSTC_LIBAFL_SOLVING_DIR=$HOME/libafl/fuzzers/libfuzzer_rust_concolic
-ENV SYMRUSTC_LIBAFL_TRACING_DIR=$HOME/libafl/libafl_concolic/test
 
 # Setup Rust compiler source
 ARG SYMRUSTC_RUST_VERSION
@@ -104,54 +99,84 @@ RUN sudo apt-get update \
 
 #
 
-COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_noop symcc_noop
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build z3_build
 ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
 
-ENV SYMRUSTC_LLVM_DIST_PATH=$HOME/llvm_dist
-COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist $SYMRUSTC_LLVM_DIST_PATH
-
-COPY --chown=ubuntu:ubuntu src/rs/rustc.rs $HOME/rust_source/src/bootstrap/bin
+COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_noop symcc_noop
 RUN sudo ln -s $HOME/symcc_noop/SymRuntime-prefix/src/SymRuntime-build/libSymRuntime.so /usr/lib/libSymRuntime.so
 
 #
+WORKDIR $HOME/rust_source
 
+ARG SYMRUSTC_LLVM_DIST_PATH=$HOME/llvm_dist
+COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist $SYMRUSTC_LLVM_DIST_PATH
+RUN ./configure \
+    --llvm-config=$SYMRUSTC_LLVM_DIST_PATH/bin/llvm-config \
+    --dist-compression-formats=gz
+
+ARG BUILD_ARTIFACTS_PATH=$HOME/symrustc_build
+RUN mkdir -p $BUILD_ARTIFACTS_PATH
+
+# Building an instrumented version of the standard library.
+COPY --chown=ubuntu:ubuntu src/rs/rustc.rs src/bootstrap/bin/rustc.rs
 RUN export SYMCC_NO_SYMBOLIC_INPUT=yes \
-    && cd rust_source \
-    && ./configure --llvm-config=$SYMRUSTC_LLVM_DIST_PATH/bin/llvm-config \
     && sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
         compiler/rustc_span/src/analyze_source_file.rs \
-    && /usr/bin/python3 ./x.py build --stage 2
+    && ./x.py dist rust-std
+RUN cp -r build/dist $BUILD_ARTIFACTS_PATH
+
+# This is the normal compiler that will be distributed with our customized LLVM 
+# distribution (that contains the SymCC pass.) 
+# Normally, a shared library named libLLVM* is included in the toolchain.
+# It looks like it is possible to achieve that using the `llvm-has-rust-patches`
+# config.
+COPY --chown=ubuntu:ubuntu src/rs/rustc_original.rs src/bootstrap/bin/rustc.rs
+RUN sed -i -e 's/is_x86_feature_detected!("sse2")/false \&\& &/' \
+        compiler/rustc_span/src/analyze_source_file.rs \
+    # It looks like the build system does not notice the change in rustc.rs,
+    # so doesn't rebuild the library.
+    && ./x.py clean \
+    && ./x.py build --stage 2
+RUN cp -r build/x86_64-unknown-linux-gnu/stage2 $BUILD_ARTIFACTS_PATH/stage2_normal
+RUN mkdir -p $BUILD_ARTIFACTS_PATH/stage0 && cp -r build/x86_64-unknown-linux-gnu/stage0/bin $BUILD_ARTIFACTS_PATH/stage0/bin
 
 #
 
-FROM builder_reqs AS builder_symrustc_dist
+FROM builder_base AS builder_symrustc_dist
+
+RUN sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        g++ \
+    && sudo apt-get clean
+
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_qsym symcc_qsym
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_libcxx $SYMCC_LIBCXX_PATH
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build z3_build
 ENV LD_LIBRARY_PATH=$HOME/z3_build/dist/lib:$LD_LIBRARY_PATH
 
-ENV SYMRUSTC_LLVM_DIST_PATH=$HOME/llvm_dist
-COPY --chown=ubuntu:ubuntu --from=llvm_dist /home/dist $SYMRUSTC_LLVM_DIST_PATH
-
-ARG SYMRUSTC_RUST_BUILD=$HOME/rust_source/build/x86_64-unknown-linux-gnu
-ARG SYMRUSTC_RUST_BUILD_STAGE=$SYMRUSTC_RUST_BUILD/stage2
 ARG SYMRUSTC_DIST=$HOME/symrustc_dist
+ARG SYMRUSTC_DIST_NORMAL=$SYMRUSTC_DIST/normal
+ARG SYMRUSTC_DIST_SYMSTD=$SYMRUSTC_DIST/symstd
 
-# ENV SYMRUSTC_CARGO=$SYMRUSTC_RUST_BUILD/stage0/bin/cargo
-ENV SYMRUSTC_RUSTC=$SYMRUSTC_DIST/bin/rustc
-ENV SYMRUSTC_LD_LIBRARY_PATH=$SYMRUSTC_DIST/lib
-ENV PATH=$HOME/.cargo/bin:$PATH
+ARG BUILD_ARTIFACTS_PATH=$HOME/symrustc_build
 
-ENV SYMCC_PASS_DIR=$HOME/symcc_build
-ENV SYMRUSTC_RUNTIME_DIR=$SYMCC_PASS_DIR/SymRuntime-prefix/src/SymRuntime-build
-RUN ln -s ~/symcc_qsym $SYMCC_PASS_DIR
+COPY --chown=ubuntu:ubuntu --from=builder_symrustc $BUILD_ARTIFACTS_PATH/stage2_normal $SYMRUSTC_DIST_NORMAL
+COPY --chown=ubuntu:ubuntu --from=builder_symrustc $BUILD_ARTIFACTS_PATH/stage0/bin/cargo $SYMRUSTC_DIST_NORMAL/bin/cargo
 
-COPY --chown=ubuntu:ubuntu --from=builder_symrustc /home/ubuntu/rust_source/build/x86_64-unknown-linux-gnu/stage2 $SYMRUSTC_DIST
-COPY --chown=ubuntu:ubuntu --from=builder_symrustc /home/ubuntu/symcc_noop/SymRuntime-prefix/src/SymRuntime-build/libSymRuntime.so $SYMRUSTC_LD_LIBRARY_PATH/libSymRuntime.so
+COPY --chown=ubuntu:ubuntu --from=builder_symrustc $BUILD_ARTIFACTS_PATH/dist/rust-std-*-dev-x86_64-unknown-linux-gnu.tar.gz /tmp/rust-symstd-dev-x86_64-unknown-linux-gnu.tar.gz
+RUN mkdir -p $SYMRUSTC_DIST_SYMSTD && \
+    tar -xf /tmp/rust-symstd-dev-x86_64-unknown-linux-gnu.tar.gz \
+        --directory=$SYMRUSTC_DIST_SYMSTD \
+        --wildcards rust-std-*-dev-x86_64-unknown-linux-gnu/rust-std-x86_64-unknown-linux-gnu --strip-components=2 && \
+    rm /tmp/rust-symstd-dev-x86_64-unknown-linux-gnu.tar.gz
+
+ENV SYMRUSTC_CARGO=$SYMRUSTC_DIST_NORMAL/bin/cargo
+ENV SYMRUSTC_RUSTC=$SYMRUSTC_DIST_NORMAL/bin/rustc
+ENV SYMRUSTC_SYMSTD=$SYMRUSTC_DIST_SYMSTD
+
+ARG SYMCC_BUILD_DIR=$HOME/symcc_qsym
+ENV SYMRUSTC_RUNTIME_DIR=$SYMCC_BUILD_DIR/SymRuntime-prefix/src/SymRuntime-build
 
 ENV SYMRUSTC_HOME=$HOME/belcarra_source
-ENV SYMRUSTC_HOME_CPP=$SYMRUSTC_HOME/src/cpp
 ENV SYMRUSTC_HOME_RS=$SYMRUSTC_HOME/src/rs
 COPY --chown=ubuntu:ubuntu src/rs $SYMRUSTC_HOME_RS
 COPY --chown=ubuntu:ubuntu examples $SYMRUSTC_HOME/examples
