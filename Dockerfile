@@ -24,7 +24,7 @@ ARG DISTS_TAG
 #
 # Set up Ubuntu environment
 #
-FROM ubuntu:22.10 AS builder_base
+FROM ubuntu:22.10 AS base
 
 SHELL ["/bin/bash", "-c"]
 
@@ -47,7 +47,7 @@ FROM ghcr.io/sfu-rsl/symcc_dist:$DISTS_TAG AS symcc_dist
 
 ##################################################
 
-FROM builder_base AS builder_commons
+FROM base AS commons
 
 RUN sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
         git \
@@ -61,7 +61,7 @@ COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build/dist/lib /usr/local/
 #
 # Set up project source
 #
-FROM builder_commons AS builder_source
+FROM commons AS source
 
 # Setup Rust compiler source
 ARG SYMRUSTC_RUST_VERSION
@@ -90,7 +90,7 @@ RUN [[ -v SYMRUSTC_RUST_VERSION ]] && dir='rust_source' || dir='belcarra_source0
 #
 # Build SymRustC core
 #
-FROM builder_source AS builder_symrustc
+FROM source AS builder
 
 ARG SYMRUSTC_LLVM_VERSION=15
 
@@ -145,7 +145,7 @@ RUN mkdir -p $BUILD_ARTIFACTS_PATH/stage0 && cp -r build/x86_64-unknown-linux-gn
 
 ##################################################
 
-FROM builder_commons AS builder_symrustc_dist
+FROM commons AS dist
 
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/dist_qsym symcc_qsym
 
@@ -155,10 +155,10 @@ ARG SYMRUSTC_DIST_SYMSTD=$SYMRUSTC_DIST/symstd
 
 ARG BUILD_ARTIFACTS_PATH=$HOME/symrustc_build
 
-COPY --chown=ubuntu:ubuntu --from=builder_symrustc $BUILD_ARTIFACTS_PATH/stage2_normal $SYMRUSTC_DIST_NORMAL
-COPY --chown=ubuntu:ubuntu --from=builder_symrustc $BUILD_ARTIFACTS_PATH/stage0/bin/cargo $SYMRUSTC_DIST_NORMAL/bin/cargo
+COPY --chown=ubuntu:ubuntu --from=builder $BUILD_ARTIFACTS_PATH/stage2_normal $SYMRUSTC_DIST_NORMAL
+COPY --chown=ubuntu:ubuntu --from=builder $BUILD_ARTIFACTS_PATH/stage0/bin/cargo $SYMRUSTC_DIST_NORMAL/bin/cargo
 
-COPY --chown=ubuntu:ubuntu --from=builder_symrustc $BUILD_ARTIFACTS_PATH/dist/rust-std-*-dev-x86_64-unknown-linux-gnu.tar.gz /tmp/rust-symstd-dev-x86_64-unknown-linux-gnu.tar.gz
+COPY --chown=ubuntu:ubuntu --from=builder $BUILD_ARTIFACTS_PATH/dist/rust-std-*-dev-x86_64-unknown-linux-gnu.tar.gz /tmp/rust-symstd-dev-x86_64-unknown-linux-gnu.tar.gz
 RUN mkdir -p $SYMRUSTC_DIST_SYMSTD && \
     tar -xf /tmp/rust-symstd-dev-x86_64-unknown-linux-gnu.tar.gz \
         --directory=$SYMRUSTC_DIST_SYMSTD \
