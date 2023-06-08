@@ -55,6 +55,7 @@ RUN sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     && sudo apt-get clean
 
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build/dist/lib /usr/local/lib
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 ##################################################
 
