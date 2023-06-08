@@ -15,26 +15,18 @@ if (( $(echo "$size" | cut -d "$unit" -f 1) < 30 )) ; then
     exit 1
 fi
 
-function docker_b0 () {
+function time_docker_build () {
     date -R
     /usr/bin/time -v docker build "$@"
 }
-export -f docker_b0
+export -f time_docker_build
 
 #
 
 function docker_b () {
-    docker_b0 --target "builder_$1" -t "belcarra_$1" --build-arg SYMRUSTC_BRANCH="$SYMRUSTC_BRANCH" --build-arg DISTS_TAG="${SYMRUSTC_BRANCH//\//-}" --build-arg SYMRUSTC_SKIP_FAIL=yes --build-arg SYMRUSTC_LIBAFL_EXAMPLE_SKIP_BUILD_TRACING=yes .
+    time_docker_build --target "$1" -t "belcarra_$1" --build-arg SYMRUSTC_BRANCH="$SYMRUSTC_BRANCH" --build-arg DISTS_TAG="${SYMRUSTC_BRANCH//\//-}" .
 }
 export -f docker_b
 
 ./generated/build.sh
 
-#
-
-# function docker_b () {
-#     docker_b0 "$@"
-# }
-# export -f docker_b
-
-# ./build_rustc.sh
