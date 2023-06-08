@@ -3,7 +3,7 @@
 set -euxo pipefail
 
 # Build SymRustC core
-docker_b symrustc
+docker_b builder
 
 # Set up SymRustC distribution
-docker_b symrustc_dist
+docker_b dist

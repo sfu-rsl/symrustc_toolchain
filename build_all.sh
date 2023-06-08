@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-source git_current_branch.sh
+source ./utils/git_current_branch.sh
 
 name="$(basename $PWD)_log_${hash}__"
 
