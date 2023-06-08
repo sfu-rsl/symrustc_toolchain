@@ -29,11 +29,11 @@ ubuntu@xxxx:~$ ./main
 By nature, the programs compiled by SymRustC respect the runtime configuration variables meant for SymCC.
 
 In addition, you can set the following environment variables for changing the behavior of `symrustc` compiler.
-| **Variable**           | **Purpose**                                                                                          | **Default Value**                             |
-|------------------------|------------------------------------------------------------------------------------------------------|-----------------------------------------------|
-| `SYMRUSTC_RUSTC`       | Determines the path to the normal rust compiler that supports SymCC's pass.                          | `rustc` in the `normal` toolchain             |
-| `SYMRUSTC_SYMSTD`      | Determines the `sysroot` of `symrustc`. Used for setting a symbolized version of built-in libraries. | `symrustc`'s toolchain path                   |
-| `SYMRUSTC_RUNTIME_DIR` | Equivalent to `SYMCC_RUNTIME_DIR`.                                                                   | The QSYM runtime library's path in the image. |
+| **Variable**           | **Purpose**                                                                                           | **Default Value**                             |
+|------------------------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------|
+| `SYMRUSTC_RUSTC`       | Determines the path to the rust compiler that supports SymCC's pass.                                  | `rustc` in the `normal` toolchain             |
+| `SYMRUSTC_SYMSTD`      | Determines the [`sysroot`](https://doc.rust-lang.org/rustc/command-line-arguments.html#--sysroot-override-the-system-root) for `symrustc`. Used for setting a symbolized version of built-in libraries. | `symrustc`'s toolchain path                   |
+| `SYMRUSTC_RUNTIME_DIR` | Equivalent to `SYMCC_RUNTIME_DIR`.                                                                    | The QSYM runtime library's path in the image. |
 
 For more information about the configurations and symbolic execution output please refer to [SymCC](eurecom-s3/symcc)'s documentations.
 
