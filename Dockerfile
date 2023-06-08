@@ -52,6 +52,7 @@ FROM base AS commons
 RUN sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
         git \
         g++ \
+        curl \
     && sudo apt-get clean
 
 COPY --chown=ubuntu:ubuntu --from=symcc_dist /home/z3_build/dist/lib /usr/local/lib
@@ -103,7 +104,6 @@ RUN sudo apt-get update \
         cmake \
         ninja-build \
         python3-pip \
-        curl \
     && sudo apt-get clean
 
 
@@ -170,11 +170,23 @@ ENV SYMRUSTC_CARGO=$SYMRUSTC_DIST_NORMAL/bin/cargo
 ENV SYMRUSTC_RUSTC=$SYMRUSTC_DIST_NORMAL/bin/rustc
 ENV SYMRUSTC_SYMSTD=$SYMRUSTC_DIST_SYMSTD
 
+COPY --chown=ubuntu:ubuntu src/rs/symrustc.sh $SYMRUSTC_DIST_SYMSTD/bin/rustc
+COPY --chown=ubuntu:ubuntu src/rs/symcargo.sh $SYMRUSTC_DIST_SYMSTD/bin/cargo
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain none --profile minimal \
+    && source "$HOME/.cargo/env" \
+    && rustup toolchain link symrustc $SYMRUSTC_DIST_SYMSTD \
+    && rustup toolchain link normal $SYMRUSTC_DIST_NORMAL \
+    && rustup default normal \
+    ;
+
+RUN ln -s $SYMRUSTC_SYMSTD/bin/rustc $HOME/.cargo/bin/symrustc
+RUN ln -s $SYMRUSTC_SYMSTD/bin/cargo $HOME/.cargo/bin/symcargo
+
 ARG SYMCC_BUILD_DIR=$HOME/symcc_qsym
 ENV SYMRUSTC_RUNTIME_DIR=$SYMCC_BUILD_DIR/SymRuntime-prefix/src/SymRuntime-build
+ENV SYMRUSTC_OUTPUT_DIR=/tmp/output
+
+RUN mkdir -p $SYMRUSTC_OUTPUT_DIR
 
 COPY --chown=ubuntu:ubuntu examples $HOME/examples
-
-COPY --chown=ubuntu:ubuntu src/rs/symrustc.sh $SYMRUSTC_DIST_NORMAL/bin/symrustc
-COPY --chown=ubuntu:ubuntu src/rs/symcargo.sh $SYMRUSTC_DIST_NORMAL/bin/symcargo
-ENV PATH=$SYMRUSTC_DIST_NORMAL/bin:$PATH
