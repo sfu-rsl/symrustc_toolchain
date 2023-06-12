@@ -17,7 +17,11 @@ ubuntu@xxxx:~$ rustup override set symrustc
 ubuntu@xxxx:~$ cargo run
 ```
 You can set `symrustc` as your toolchain through other ways as well.
-Please refer to the [official documentation](https://rust-lang.github.io/rustup/overrides.html) of `rustup`.
+For example, to make `symrustc` the default toolchain globally, you can run the following command.
+To see other options, check out [this section](https://rust-lang.github.io/rustup/overrides.html) in the `rustup` book.
+```console
+ubuntu@xxxx:~$ rustup default symrustc
+```
 
 The environment also provide the commands `symrustc` and `symcargo` which work as a drop-in respectively for `rustc` and `cargo`.
 ```console
@@ -31,7 +35,7 @@ By nature, the programs compiled by SymRustC respect the runtime configuration v
 In addition, you can set the following environment variables for changing the behavior of `symrustc` compiler.
 | **Variable**           | **Purpose**                                                                                           | **Default Value**                             |
 |------------------------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------|
-| `SYMRUSTC_RUSTC`       | Determines the path to the rust compiler that supports SymCC's pass.                                  | `rustc` in the `normal` toolchain             |
+| `SYMRUSTC_RUSTC`       | Determines the path to the Rust compiler that supports SymCC's pass.                                  | `rustc` in the `normal` toolchain             |
 | `SYMRUSTC_SYMSTD`      | Determines the [`sysroot`](https://doc.rust-lang.org/rustc/command-line-arguments.html#--sysroot-override-the-system-root) for `symrustc`. Used for setting a symbolized version of built-in libraries. | `symrustc`'s toolchain path                   |
 | `SYMRUSTC_RUNTIME_DIR` | Equivalent to `SYMCC_RUNTIME_DIR`.                                                                    | The QSYM runtime library's path in the image. |
 
