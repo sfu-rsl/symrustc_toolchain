@@ -72,7 +72,7 @@ RUN if [[ -v SYMRUSTC_RUST_VERSION ]] ; then \
       git clone --depth 1 -b $SYMRUSTC_RUST_VERSION https://github.com/sfu-rsl/rust.git rust_source; \
     else \
       set -e; \
-      git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc_toolchain2.git belcarra_source0; \
+      git clone --depth 1 -b "$SYMRUSTC_BRANCH" https://github.com/sfu-rsl/symrustc_toolchain.git belcarra_source0; \
       ln -s ~/belcarra_source0/src/rs/rust_source; \
     fi
 
