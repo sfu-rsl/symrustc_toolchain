@@ -5,8 +5,7 @@
 
 set -euo pipefail
 
-source ./utils/git_current_branch.sh
-
+hash="$(git log -1 --pretty=format:%H)"
 name="$(basename $PWD)_log_${hash}__"
 
 fic="../$name$(date '+%F_%T' | tr -d ':-')"
@@ -22,5 +21,4 @@ function tee_log () {
 
 #
 
-sudo ./build_all_sudo.sh "$SYMRUSTC_BRANCH" 2>&1 | tee_log
-sudo docker run -it --rm $(grep '\--->' "$fic" | tail -n 1 | cut -d ' ' -f 3)
+./build_all_sudo.sh "$(git branch --show-current)" "latest" 2>&1 | tee_log
