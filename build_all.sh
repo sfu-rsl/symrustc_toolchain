@@ -21,4 +21,10 @@ function tee_log () {
 
 #
 
-./build_all_sudo.sh "$(git branch --show-current)" "latest" 2>&1 | tee_log
+current_branch="$(git branch --show-current)"
+dists_label="latest"
+if [ "$current_branch" != "main" ] ; then
+    dists_label="${current_branch//\//-}"
+fi
+
+./build_all_sudo.sh "$current_branch" "$dists_label" 2>&1 | tee_log
